@@ -1,26 +1,41 @@
 <template>
-  <div class="space-y-2">
-    <div class="flex justify-between items-center">
-      <label class="text-sm font-medium text-gray-700">{{ label }}</label>
-      <span class="text-sm font-mono text-apple-blue">
+  <div class="w-full space-y-3 select-none">
+    <div class="flex justify-between items-center px-1">
+      <label class="text-sm font-semibold text-gray-500 tracking-tight">{{ label }}</label>
+      <span class="font-mono text-sm font-bold text-apple-blue bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100/50">
         {{ displayValue }}{{ suffix }}
       </span>
     </div>
-    <input
-      type="range"
-      :value="value"
-      :min="min"
-      :max="max"
-      :step="step"
-      class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-      :style="trackStyle"
-      @input="handleInput"
-    />
+
+    <div class="relative w-full h-6 flex items-center group cursor-pointer">
+      
+      <div class="absolute w-full h-1.5 bg-gray-200/80 rounded-full overflow-hidden">
+        <div 
+          class="h-full bg-apple-blue rounded-full transition-all duration-75 ease-out" 
+          :style="{ width: `${percentage}%` }" 
+        />
+      </div>
+
+      <div 
+        class="absolute h-5 w-5 bg-white rounded-full shadow-[0_2px_4px_rgba(0,0,0,0.15)] border border-black/5 transform -translate-x-1/2 transition-transform duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:scale-110 group-active:scale-95"
+        :style="{ left: `${percentage}%` }" 
+      />
+
+      <input
+        type="range"
+        :value="value"
+        :min="min"
+        :max="max"
+        :step="step"
+        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 margin-0"
+        @input="handleInput"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed } from 'vue';
 
 const props = withDefaults(defineProps<{
   label: string
@@ -40,18 +55,12 @@ const emit = defineEmits<{
   update: [value: number]
 }>()
 
-const displayValue = computed(() => {
-  if (props.step < 1) {
-    return props.value.toFixed(2)
-  }
-  return props.value
+const percentage = computed(() => {
+  return ((props.value - props.min) / (props.max - props.min)) * 100
 })
 
-const trackStyle = computed(() => {
-  const percent = ((props.value - props.min) / (props.max - props.min)) * 100
-  return {
-    background: `linear-gradient(to right, #007AFF 0%, #007AFF ${percent}%, #e5e7eb ${percent}%, #e5e7eb 100%)`
-  }
+const displayValue = computed(() => {
+  return props.step < 1 ? props.value.toFixed(2) : props.value
 })
 
 function handleInput(event: Event) {
@@ -59,25 +68,3 @@ function handleInput(event: Event) {
   emit('update', parseFloat(target.value))
 }
 </script>
-
-<style scoped>
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: white;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-  cursor: pointer;
-  transition: transform 0.1s ease;
-}
-
-input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.1);
-}
-
-input[type="range"]::-webkit-slider-thumb:active {
-  transform: scale(0.95);
-}
-</style>

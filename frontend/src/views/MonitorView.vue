@@ -1,45 +1,28 @@
 <template>
-  <div class="h-full w-full relative flex items-center justify-center p-6 bg-gradient-to-br from-gray-50 to-gray-100">
-    <!-- 视频容器 -->
-    <div class="relative max-w-full max-h-full aspect-video">
-      <!-- 画框效果 -->
-      <div class="absolute inset-0 border-[6px] border-white rounded-2xl shadow-2xl overflow-hidden">
-        <!-- 视频/图像 -->
-        <img 
-          v-if="currentFrame"
-          :src="'data:image/jpeg;base64,' + currentFrame.imageData"
-          class="w-full h-full object-contain bg-black"
-          alt="监控画面"
-        />
-        <!-- 无信号占位 -->
-        <div 
-          v-else 
-          class="w-full h-full bg-gray-900 flex flex-col items-center justify-center"
-        >
-          <VideoOff class="w-16 h-16 text-gray-600 mb-4" />
-          <span class="text-gray-500 text-lg">等待视频信号...</span>
+  <div class="h-full w-full relative flex items-center justify-center p-6">
+    <div class="relative w-full max-w-6xl aspect-video rounded-[32px] overflow-hidden shadow-2xl border-[8px] border-white bg-black group transition-transform duration-700 hover:scale-[1.005]">
+      
+      <img 
+        v-if="currentFrame"
+        :src="'data:image/jpeg;base64,' + currentFrame.imageData"
+        class="w-full h-full object-contain transition-opacity duration-300"
+        alt="Live Feed"
+      />
+      
+      <div v-else class="w-full h-full bg-gray-50 flex flex-col items-center justify-center text-gray-400">
+        <div class="w-16 h-16 mb-4 rounded-full bg-gray-200 animate-pulse"></div>
+        <span class="font-medium tracking-wide">WAITING FOR SIGNAL...</span>
+      </div>
+
+      <canvas ref="canvasRef" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+
+      <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+        <div v-if="wsConnected" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white text-xs font-bold shadow-lg">
+          <div class="w-2 h-2 bg-apple-green rounded-full animate-[pulse_2s_infinite]"></div>
+          LIVE FEED
         </div>
-
-        <!-- Canvas 覆盖层 - 绘制检测框 -->
-        <canvas 
-          ref="canvasRef"
-          class="absolute inset-0 w-full h-full pointer-events-none"
-        ></canvas>
-
-        <!-- LIVE 状态指示 -->
-        <div 
-          v-if="wsConnected"
-          class="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-apple-green/90 text-white text-sm font-medium pulse-glow"
-        >
-          <div class="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-          LIVE
-        </div>
-
-        <!-- 推理耗时 -->
-        <div 
-          v-if="currentFrame"
-          class="absolute top-4 right-4 px-3 py-1.5 rounded-full bg-black/50 text-white text-sm backdrop-blur"
-        >
+        
+        <div v-if="currentFrame" class="px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md text-white/90 text-xs font-mono border border-white/10">
           {{ currentFrame.inferenceTime }}ms
         </div>
       </div>
@@ -48,9 +31,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue'
-import { VideoOff } from 'lucide-vue-next'
-import type { FrameData, Detection } from '../types'
+import { nextTick, onMounted, ref, watch } from 'vue';
+import type { Detection, FrameData } from '../types';
 
 const props = defineProps<{
   wsConnected: boolean

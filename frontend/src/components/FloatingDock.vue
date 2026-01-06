@@ -1,16 +1,18 @@
 <template>
-  <nav class="w-20 glass-dark rounded-4xl p-3 flex flex-col items-center gap-2">
-    <!-- Logo -->
-    <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-apple-blue to-apple-purple flex items-center justify-center mb-4">
-      <Egg class="w-6 h-6 text-white" />
+  <nav class="w-20 dock-glass rounded-4xl p-3 flex flex-col items-center gap-4 transition-all duration-300">
+    <div class="w-12 h-12 mt-2 rounded-2xl bg-gradient-to-tr from-gray-900 to-gray-700 flex items-center justify-center shadow-lg transform hover:scale-105 transition-transform duration-300">
+      <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
     </div>
 
-    <!-- 导航项 -->
-    <div class="flex-1 flex flex-col gap-2">
+    <div class="w-8 h-px bg-gray-200/50"></div>
+
+    <div class="flex-1 flex flex-col gap-4 w-full px-1">
       <DockItem 
         :active="activeTab === 'monitor'"
         @click="$emit('update:activeTab', 'monitor')"
-        title="监控"
+        title="实时监控"
       >
         <Camera class="w-6 h-6" />
       </DockItem>
@@ -18,30 +20,28 @@
       <DockItem 
         :active="activeTab === 'console'"
         @click="$emit('update:activeTab', 'console')"
-        title="控制台"
+        title="系统控制台"
       >
         <Settings2 class="w-6 h-6" />
       </DockItem>
     </div>
 
-    <!-- 底部状态 -->
-    <div class="mt-auto">
+    <div class="mb-4">
       <div 
-        class="w-10 h-10 rounded-xl flex items-center justify-center"
-        :class="connected ? 'bg-apple-green/20' : 'bg-apple-red/20'"
-      >
-        <Wifi 
-          class="w-5 h-5" 
-          :class="connected ? 'text-apple-green' : 'text-apple-red'"
-        />
-      </div>
+        class="w-3 h-3 rounded-full shadow-sm transition-colors duration-500"
+        :class="[
+          connected ? 'bg-apple-green shadow-[0_0_10px_rgba(52,199,89,0.4)]' : 'bg-apple-red',
+          connected ? 'animate-pulse' : ''
+        ]"
+        :title="connected ? '系统在线' : '连接断开'"
+      ></div>
     </div>
   </nav>
 </template>
 
 <script setup lang="ts">
-import { Camera, Settings2, Wifi, Egg } from 'lucide-vue-next'
-import DockItem from './DockItem.vue'
+import { Camera, Settings2 } from 'lucide-vue-next';
+import DockItem from './DockItem.vue';
 
 defineProps<{
   activeTab: 'monitor' | 'console'
