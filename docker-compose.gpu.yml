@@ -1,0 +1,13 @@
+# Docker Compose GPU 配置覆盖文件
+# 使用方法: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# 或使用 Makefile: make docker-up-gpu
+
+services:
+  ai-service:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

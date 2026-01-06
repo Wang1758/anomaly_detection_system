@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package detection;
+
+option go_package = "anomaly_detection_system/backend/pb";
+
+// 检测服务定义
+service DetectionService {
+    // 执行目标检测
+    rpc Detect(DetectRequest) returns (DetectResponse);
+    
+    // 重新加载模型
+    rpc ReloadModel(ReloadModelRequest) returns (ReloadModelResponse);
+    
+    // 更新检测参数
+    rpc UpdateParams(UpdateParamsRequest) returns (UpdateParamsResponse);
+}
+
+// 检测请求
+message DetectRequest {
+    bytes image_data = 1; // 图像字节数据
+    int64 frame_id = 2; // 帧序号，用于结果排序
+    string image_format = 3; // 图像格式 (jpeg/png)
+}
+
+// 检测响应
+message DetectResponse {
+    int64 frame_id = 1; // 帧序号
+    repeated DetectionResult results = 2; // 检测结果列表
+    int64 inference_time_ms = 3; // 推理耗时(毫秒)
+    string error = 4; // 错误信息(如有)
+}
+
+// 单个检测结果
+message DetectionResult {
+    int32 id = 1; // 检测框ID
+    BoundingBox bbox = 2; // 边界框坐标
+    string class_name = 3; // 类别名称
+    int32 class_id = 4; // 类别ID
+    float confidence = 5; // 置信度 (0.0 - 1.0)
+    float entropy = 6; // 信息熵值
+    bool is_uncertain = 7; // 是否为不确定目标
+}
+
+// 边界框
+message BoundingBox {
+    float x1 = 1; // 左上角 x
+    float y1 = 2; // 左上角 y
+    float x2 = 3; // 右下角 x
+    float y2 = 4; // 右下角 y
+}
+
+// 模型重载请求
+message ReloadModelRequest {
+    string model_path = 1; // 新模型权重文件路径 (可选，为空则使用默认路径)
+}
+
+// 模型重载响应
+message ReloadModelResponse {
+    bool success = 1; // 是否成功
+    string message = 2; // 消息
+    string model_version = 3; // 当前模型版本
+}
+
+// 参数更新请求
+message UpdateParamsRequest {
+    optional float confidence_threshold = 1;    // 置信度阈值 (0.0 - 1.0)
+    optional float entropy_threshold = 2;       // 熵值阈值 (0.0 - 1.0)
+    optional float nms_iou_threshold = 3;       // NMS IoU 阈值 (0.5 - 1.0)
+    optional int32 input_size = 4;              // 输入图像尺寸 (320/640/1280)
+}
+
+// 参数更新响应
+message UpdateParamsResponse {
+    bool success = 1; // 是否成功
+    string message = 2; // 消息
+    CurrentParams current = 3; // 当前参数值
+}
+
+// 当前参数
+message CurrentParams {
+    float confidence_threshold = 1;
+    float entropy_threshold = 2;
+    float nms_iou_threshold = 3;
+    int32 input_size = 4;
+}

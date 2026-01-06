@@ -1,0 +1,47 @@
+services:
+  # Python AI 服务
+  ai-service:
+    build:
+      context: .
+      dockerfile: ai_service/Dockerfile
+    container_name: smart-farm-ai
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./data:/app/data
+      - ./data/models:/app/models
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+  # Go 后端服务
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: smart-farm-backend
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - GIN_MODE=release
+      - AI_SERVICE_ADDRESS=ai-service:50051
+    depends_on:
+      - ai-service
+    restart: unless-stopped
+
+  # 前端服务（生产环境使用 nginx）
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: smart-farm-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  data:
