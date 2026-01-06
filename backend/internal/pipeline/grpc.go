@@ -247,10 +247,16 @@ func (gc *GRPCClient) UpdateAIParams(params *pb.UpdateParamsRequest) (*pb.Update
 	gc.mu.RUnlock()
 
 	if client == nil {
-		return nil, nil
+		// AI 服务未连接，跳过更新
+		log.Println("[GRPCClient] AI 服务未连接，跳过参数更新")
+		return &pb.UpdateParamsResponse{
+			Success: true,
+			Message: "AI 服务未连接，仅更新本地配置",
+		}, nil
 	}
 
-	ctx, cancel := context.WithTimeout(gc.ctx, 5*time.Second)
+	// 使用独立的 context，避免父 context 取消导致调用失败
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	return client.UpdateParams(ctx, params)
@@ -263,10 +269,16 @@ func (gc *GRPCClient) ReloadModel(modelPath string) (*pb.ReloadModelResponse, er
 	gc.mu.RUnlock()
 
 	if client == nil {
-		return nil, nil
+		// AI 服务未连接，跳过重载
+		log.Println("[GRPCClient] AI 服务未连接，跳过模型重载")
+		return &pb.ReloadModelResponse{
+			Success: false,
+			Message: "AI 服务未连接",
+		}, nil
 	}
 
-	ctx, cancel := context.WithTimeout(gc.ctx, 60*time.Second) // 模型加载可能较慢
+	// 使用独立的 context，避免父 context 取消导致调用失败
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // 模型加载可能较慢
 	defer cancel()
 
 	return client.ReloadModel(ctx, &pb.ReloadModelRequest{
