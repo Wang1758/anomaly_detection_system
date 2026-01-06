@@ -67,14 +67,14 @@ import AlertQueue from './components/AlertQueue.vue'
 import FloatingDock from './components/FloatingDock.vue'
 import VideoSourceSelector from './components/VideoSourceSelector.vue'
 import type {
-    AIConfig,
-    Alert,
-    Detection,
-    FilterConfig,
-    FrameData,
-    TrainingConfig,
-    TrainingStatus,
-    VideoConfig
+  AIConfig,
+  Alert,
+  Detection,
+  FilterConfig,
+  FrameData,
+  TrainingConfig,
+  TrainingStatus,
+  VideoConfig
 } from './types'
 import ConsoleView from './views/ConsoleView.vue'
 import MonitorView from './views/MonitorView.vue'
@@ -436,7 +436,6 @@ async function triggerTraining() {
 }
 
 function pollTrainingStatus() {
-  const wasTraining = true
   const interval = setInterval(async () => {
     await fetchTrainingStatus()
     if (!trainingStatus.value.is_training) {
