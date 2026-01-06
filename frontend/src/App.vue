@@ -1,5 +1,21 @@
 <template>
   <div class="h-screen w-screen aurora-bg overflow-hidden p-4 flex gap-4">
+    <!-- Toast 弹窗容器 -->
+    <div class="toast-container">
+      <div
+        v-for="toast in toasts"
+        :key="toast.id"
+        class="toast"
+        :class="[`toast-${toast.type}`, { 'toast-out': toast.leaving }]"
+      >
+        <CheckCircle v-if="toast.type === 'success'" class="w-5 h-5" />
+        <XCircle v-else-if="toast.type === 'error'" class="w-5 h-5" />
+        <AlertCircle v-else-if="toast.type === 'warning'" class="w-5 h-5" />
+        <Info v-else class="w-5 h-5" />
+        <span>{{ toast.message }}</span>
+      </div>
+    </div>
+
     <!-- 左侧悬浮导航 Dock -->
     <FloatingDock 
       :activeTab="activeTab" 
@@ -45,25 +61,51 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, reactive } from 'vue'
+import { AlertCircle, CheckCircle, Info, XCircle } from 'lucide-vue-next'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import AlertQueue from './components/AlertQueue.vue'
 import FloatingDock from './components/FloatingDock.vue'
 import VideoSourceSelector from './components/VideoSourceSelector.vue'
-import MonitorView from './views/MonitorView.vue'
-import ConsoleView from './views/ConsoleView.vue'
-import AlertQueue from './components/AlertQueue.vue'
-import type { 
-  VideoConfig, 
-  AIConfig, 
-  FilterConfig, 
-  TrainingConfig,
-  FrameData,
-  Detection,
-  Alert,
-  TrainingStatus
+import type {
+    AIConfig,
+    Alert,
+    Detection,
+    FilterConfig,
+    FrameData,
+    TrainingConfig,
+    TrainingStatus,
+    VideoConfig
 } from './types'
+import ConsoleView from './views/ConsoleView.vue'
+import MonitorView from './views/MonitorView.vue'
 
 // 当前激活的 Tab
 const activeTab = ref<'monitor' | 'console'>('monitor')
+
+// Toast 弹窗相关
+interface Toast {
+  id: number
+  type: 'success' | 'error' | 'warning' | 'info'
+  message: string
+  leaving?: boolean
+}
+const toasts = ref<Toast[]>([])
+let toastId = 0
+
+function showToast(type: Toast['type'], message: string, duration = 3000) {
+  const id = ++toastId
+  toasts.value.push({ id, type, message })
+  
+  setTimeout(() => {
+    const index = toasts.value.findIndex(t => t.id === id)
+    if (index !== -1) {
+      toasts.value[index].leaving = true
+      setTimeout(() => {
+        toasts.value = toasts.value.filter(t => t.id !== id)
+      }, 300)
+    }
+  }, duration)
+}
 
 // WebSocket 连接状态
 const wsConnected = ref(false)
@@ -300,10 +342,13 @@ async function applyVideoConfig(config: VideoConfig) {
     const data = await res.json()
     if (data.success) {
       Object.assign(videoConfig, data.config)
+      showToast('success', '视频源配置已应用')
     } else {
+      showToast('error', '视频配置失败: ' + (data.error || data.message))
       console.error('更新视频配置失败:', data.error || data.message)
     }
   } catch (e) {
+    showToast('error', '视频配置失败: 网络错误')
     console.error('更新视频配置失败:', e)
   }
 }
@@ -318,8 +363,12 @@ async function updateAIConfig(config: Partial<AIConfig>) {
     const data = await res.json()
     if (data.success) {
       Object.assign(systemConfig.ai, data.config)
+      showToast('success', 'AI 检测参数已更新')
+    } else {
+      showToast('error', 'AI 参数更新失败: ' + (data.error || data.message))
     }
   } catch (e) {
+    showToast('error', 'AI 参数更新失败: 网络错误')
     console.error('更新 AI 配置失败:', e)
   }
 }
@@ -334,8 +383,12 @@ async function updateFilterConfig(config: Partial<FilterConfig>) {
     const data = await res.json()
     if (data.success) {
       Object.assign(systemConfig.filter, data.config)
+      showToast('success', '过滤参数已更新')
+    } else {
+      showToast('error', '过滤参数更新失败: ' + (data.error || data.message))
     }
   } catch (e) {
+    showToast('error', '过滤参数更新失败: 网络错误')
     console.error('更新过滤配置失败:', e)
   }
 }
@@ -350,8 +403,12 @@ async function updateTrainingConfig(config: Partial<TrainingConfig>) {
     const data = await res.json()
     if (data.success) {
       Object.assign(systemConfig.training, data.config)
+      showToast('success', '训练配置已更新')
+    } else {
+      showToast('error', '训练配置更新失败: ' + (data.error || data.message))
     }
   } catch (e) {
+    showToast('error', '训练配置更新失败: 网络错误')
     console.error('更新训练配置失败:', e)
   }
 }
@@ -359,6 +416,7 @@ async function updateTrainingConfig(config: Partial<TrainingConfig>) {
 async function triggerTraining() {
   try {
     trainingStatus.value.is_training = true
+    showToast('info', '模型训练已启动...')
     const res = await fetch('/api/training/trigger', {
       method: 'POST'
     })
@@ -366,25 +424,36 @@ async function triggerTraining() {
     if (data.success) {
       // 轮询训练状态
       pollTrainingStatus()
+    } else {
+      showToast('error', '训练启动失败: ' + (data.error || data.message))
+      trainingStatus.value.is_training = false
     }
   } catch (e) {
+    showToast('error', '训练启动失败: 网络错误')
     console.error('触发训练失败:', e)
     trainingStatus.value.is_training = false
   }
 }
 
 function pollTrainingStatus() {
+  const wasTraining = true
   const interval = setInterval(async () => {
     await fetchTrainingStatus()
     if (!trainingStatus.value.is_training) {
       clearInterval(interval)
+      // 训练结束，显示结果
+      if (trainingStatus.value.latest_training?.status === 'completed') {
+        showToast('success', '模型训练完成！模型已热更新')
+      } else if (trainingStatus.value.latest_training?.status === 'failed') {
+        showToast('error', '模型训练失败: ' + (trainingStatus.value.latest_training?.error_message || '未知错误'))
+      }
     }
   }, 2000)
 }
 
 async function submitFeedback(alertId: number, status: 'normal' | 'abnormal') {
   try {
-    await fetch('/api/feedback', {
+    const res = await fetch('/api/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -392,13 +461,19 @@ async function submitFeedback(alertId: number, status: 'normal' | 'abnormal') {
         label_status: status
       })
     })
+    const data = await res.json()
     
-    // 从队列中移除
-    alerts.value = alerts.value.filter(a => a.id !== alertId)
-    
-    // 刷新训练状态
-    fetchTrainingStatus()
+    if (data.success !== false) {
+      // 从队列中移除
+      alerts.value = alerts.value.filter(a => a.id !== alertId)
+      showToast('success', status === 'abnormal' ? '已标记为异常' : '已标记为正常')
+      // 刷新训练状态
+      fetchTrainingStatus()
+    } else {
+      showToast('error', '标记失败: ' + (data.error || data.message))
+    }
   } catch (e) {
+    showToast('error', '标记失败: 网络错误')
     console.error('提交反馈失败:', e)
   }
 }
