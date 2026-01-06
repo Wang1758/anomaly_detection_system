@@ -363,7 +363,8 @@ async function updateAIConfig(config: Partial<AIConfig>) {
     const data = await res.json()
     if (data.success) {
       Object.assign(systemConfig.ai, data.config)
-      showToast('success', 'AI 检测参数已更新')
+      // 显示服务器返回的消息，可能包含 AI 服务状态提示
+      showToast('success', data.message || 'AI 检测参数已更新')
     } else {
       showToast('error', 'AI 参数更新失败: ' + (data.error || data.message))
     }

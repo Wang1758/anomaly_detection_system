@@ -157,22 +157,24 @@ func (h *Handler) UpdateAIConfig(c *gin.Context) {
 	h.config.UpdateAI(aiConfig)
 
 	// 转发到 Python AI 服务
+	aiServiceMessage := ""
 	if h.grpcClient != nil {
 		resp, err := h.grpcClient.UpdateAIParams(grpcReq)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "AI 服务更新失败: " + err.Error()})
-			return
-		}
-		if resp != nil && !resp.Success {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "AI 服务更新失败: " + resp.Message})
-			return
+			// AI 服务不可用，仅更新本地配置，不报错
+			log.Printf("[Handler] AI 服务不可用，仅更新本地配置: %v", err)
+			aiServiceMessage = "（AI 服务未运行，参数将在服务启动后生效）"
+		} else if resp != nil && !resp.Success {
+			// AI 服务返回失败，记录日志但不报错
+			log.Printf("[Handler] AI 服务更新失败: %s", resp.Message)
+			aiServiceMessage = "（" + resp.Message + "）"
 		}
 	}
 
 	log.Printf("[Handler] AI 配置已更新")
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": "AI 配置已更新",
+		"message": "AI 配置已更新" + aiServiceMessage,
 		"config":  h.config.GetAI(),
 	})
 }
