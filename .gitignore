@@ -1,3 +1,4 @@
 anomaly_detection_system/ai_service/pb/*
 anomaly_detection_system/backend/pb/*
 *.log
+.vscode

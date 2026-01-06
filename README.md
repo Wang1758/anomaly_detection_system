@@ -136,7 +136,7 @@ anomaly_detection_system/
 | 依赖 | 检查命令 | 最低版本 |
 |------|----------|----------|
 | **Docker** | `docker --version` | 20.10+ |
-| **Docker Compose** | `docker compose --version` | 1.29+ |
+| **Docker Compose** | `docker compose version` | 1.29+ |
 | **NVIDIA Container Toolkit** _(可选，GPU 加速)_ | `docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi` | - |
 
 ### 💻 方式二：本地启动（开发调试推荐）
@@ -180,28 +180,6 @@ Python 依赖包（通过 `pip install -r requirements.txt` 安装）：
 | **protoc** | `protoc --version` | 3.19+ |
 | **protoc-gen-go** | `protoc-gen-go --version` | - |
 | **protoc-gen-go-grpc** | `protoc-gen-go-grpc --version` | - |
-
-### ✅ 一键环境检查脚本
-
-```bash
-echo "========== 环境检查 =========="
-echo ""
-echo "=== Python ===" && python3 --version 2>&1
-echo ""
-echo "=== Go ===" && go version 2>&1
-echo ""
-echo "=== Node.js ===" && node --version 2>&1 && npm --version 2>&1
-echo ""
-echo "=== Docker ===" && docker --version 2>&1 && docker-compose --version 2>&1
-echo ""
-echo "=== ffmpeg ===" && ffmpeg -version 2>&1 | head -1
-echo ""
-echo "=== Protoc ===" && protoc --version 2>&1
-echo ""
-echo "=== GPU (可选) ===" && nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>&1
-echo ""
-echo "==============================="
-```
 
 ---
 
