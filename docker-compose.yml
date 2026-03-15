@@ -1,0 +1,39 @@
+services:
+  ai_service:
+    build: ./ai_service
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./data/models:/app/models
+    environment:
+      - GRPC_PORT=50051
+      - MODEL_DIR=/app/models
+    restart: unless-stopped
+    # Uncomment below for GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
+
+  backend:
+    build: ./backend
+    ports:
+      - "8080:8080"
+    depends_on:
+      - ai_service
+    volumes:
+      - ./data:/app/data
+    environment:
+      - AI_SERVICE_ADDR=ai_service:50051
+      - SERVER_PORT=8080
+      - DATA_DIR=/app/data
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

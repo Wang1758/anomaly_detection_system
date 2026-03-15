@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package detection;
+
+option go_package = "anomaly_detection_system/backend/internal/grpcclient/pb";
+
+service DetectionService {
+  rpc Detect (DetectRequest) returns (DetectResponse);
+  rpc ReloadModel (ReloadRequest) returns (ReloadResponse);
+  rpc UpdateParams (ParamsRequest) returns (ParamsResponse);
+}
+
+message DetectRequest {
+  bytes image = 1;
+  int64 frame_id = 2;
+}
+
+message DetectResponse {
+  bytes visualized_image = 1;
+  bytes original_image = 2;
+  repeated DetectionMeta detections = 3;
+  bool has_uncertain = 4;
+  int64 frame_id = 5;
+}
+
+message DetectionMeta {
+  float x1 = 1;
+  float y1 = 2;
+  float x2 = 3;
+  float y2 = 4;
+  float confidence = 5;
+  int32 class_id = 6;
+  string class_name = 7;
+  bool is_uncertain = 8;
+  float entropy = 9;
+  float anomaly_score = 10;
+}
+
+message ReloadRequest {
+  string model_path = 1;
+}
+
+message ReloadResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ParamsRequest {
+  float nms_threshold = 1;
+  float confidence_threshold = 2;
+  float entropy_threshold = 3;
+  float w1 = 4;
+  float w2 = 5;
+}
+
+message ParamsResponse {
+  bool success = 1;
+  string message = 2;
+}
