@@ -33,7 +33,7 @@ export function Shell() {
 
   return (
     <div
-      className="h-screen w-screen mesh-gradient spotlight-container flex p-4 gap-4 overflow-hidden"
+      className="h-screen w-screen mesh-gradient spotlight-container flex p-5 gap-5 overflow-hidden"
       onMouseMove={handleMouseMove}
     >
       <div

@@ -4,6 +4,13 @@ import { useAppStore } from '../stores/appStore';
 import { BarChart3, Database, Activity, TrendingUp } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+const iconToneClasses = {
+  blue: 'text-blue-600 bg-blue-100/60',
+  green: 'text-emerald-600 bg-emerald-100/60',
+  purple: 'text-violet-600 bg-violet-100/60',
+  amber: 'text-amber-600 bg-amber-100/60',
+} as const;
+
 export function StatsView() {
   const { trainingHistory, setTrainingHistory } = useAppStore();
 
@@ -30,7 +37,7 @@ export function StatsView() {
 
   return (
     <div className="h-full overflow-y-auto space-y-4">
-      <h1 className="text-lg font-semibold text-gray-700 px-1">准确率看板</h1>
+      <h1 className="text-xl font-semibold text-gray-700 px-1">准确率看板</h1>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-4 gap-4">
@@ -40,15 +47,17 @@ export function StatsView() {
           { icon: Activity, label: '最新准确率', value: `${latestAccuracy.toFixed(1)}%`, color: 'purple' },
           { icon: TrendingUp, label: '模型版本', value: `v${trainingHistory.length}`, color: 'amber' },
         ].map(({ icon: Icon, label, value, color }) => (
-          <GlassCard key={label} tilt className="p-5">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl bg-${color}-100/50 flex items-center
-                justify-center border border-${color}-200/30`}>
-                <Icon size={20} className={`text-${color}-500`} />
+          <GlassCard key={label} tilt className="p-6">
+            <div className="flex items-center gap-3.5">
+              <div
+                className={`w-12 h-12 rounded-xl border border-gray-900/20 shadow-sm
+                  flex items-center justify-center ${iconToneClasses[color as keyof typeof iconToneClasses]}`}
+              >
+                <Icon size={22} strokeWidth={2} />
               </div>
               <div>
-                <p className="text-xs text-gray-400">{label}</p>
-                <p className="text-xl font-bold text-gray-700">{value}</p>
+                <p className="text-sm text-gray-400">{label}</p>
+                <p className="text-2xl font-bold text-gray-700">{value}</p>
               </div>
             </div>
           </GlassCard>
@@ -57,7 +66,7 @@ export function StatsView() {
 
       {/* Accuracy chart */}
       <GlassCard className="p-6">
-        <h2 className="text-sm font-semibold text-gray-600 mb-4">准确率趋势</h2>
+        <h2 className="text-base font-semibold text-gray-600 mb-4">准确率趋势</h2>
         <div className="h-72">
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">

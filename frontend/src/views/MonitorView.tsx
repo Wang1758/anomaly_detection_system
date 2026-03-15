@@ -49,10 +49,10 @@ export function MonitorView() {
             />
             <div className="flex items-center justify-between mb-4">
               <div>
-                <span className="text-sm font-semibold text-gray-700">
+                <span className="text-base font-semibold text-gray-700">
                   Frame #{lightboxAlert.frame_id}
                 </span>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-sm text-gray-400 mt-1">
                   {lightboxAlert.detections.filter((d) => d.is_uncertain).length} 个不确定目标 |{' '}
                   {lightboxAlert.timestamp}
                 </p>

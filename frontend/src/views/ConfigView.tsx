@@ -19,8 +19,8 @@ function SliderField({ label, value, min, max, step, onChange }: SliderFieldProp
   return (
     <div>
       <div className="flex justify-between mb-2">
-        <span className="text-sm text-gray-600 font-medium">{label}</span>
-        <span className="text-sm font-mono text-blue-600 bg-blue-50/50 px-2 py-0.5 rounded-lg">
+        <span className="text-base text-gray-600 font-medium">{label}</span>
+        <span className="text-sm font-mono text-blue-600 bg-blue-50/50 px-2.5 py-0.5 rounded-lg">
           {value.toFixed(step < 1 ? 2 : 0)}
         </span>
       </div>
@@ -31,7 +31,7 @@ function SliderField({ label, value, min, max, step, onChange }: SliderFieldProp
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-1.5 bg-gray-200/50 rounded-full appearance-none cursor-pointer
+        className="w-full h-2 bg-gray-200/50 rounded-full appearance-none cursor-pointer
           [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4
           [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full
           [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:shadow-md
@@ -92,12 +92,12 @@ export function ConfigView() {
 
   return (
     <div className="h-full overflow-y-auto pb-24 space-y-4">
-      <h1 className="text-lg font-semibold text-gray-700 px-1">系统参数配置</h1>
+      <h1 className="text-xl font-semibold text-gray-700 px-1">系统参数配置</h1>
 
       <div className="grid grid-cols-2 gap-4">
         {/* Python model params */}
         <GlassCard className="p-5 space-y-5">
-          <h2 className="text-sm font-semibold text-gray-600 mb-1">AI 模型参数</h2>
+          <h2 className="text-base font-semibold text-gray-600 mb-1">AI 模型参数</h2>
           <SliderField label="NMS 阈值" value={local.nms_threshold} min={0} max={1} step={0.05}
             onChange={(v) => update('nms_threshold', v)} />
           <SliderField label="置信度阈值" value={local.confidence_threshold} min={0} max={1} step={0.05}
@@ -112,7 +112,7 @@ export function ConfigView() {
 
         {/* Go backend params */}
         <GlassCard className="p-5 space-y-5">
-          <h2 className="text-sm font-semibold text-gray-600 mb-1">后端调度参数</h2>
+          <h2 className="text-base font-semibold text-gray-600 mb-1">后端调度参数</h2>
           <SliderField label="时间窗口 (秒)" value={local.filter_time_window} min={5} max={300} step={5}
             onChange={(v) => update('filter_time_window', v)} />
           <SliderField label="IoU 阈值" value={local.filter_iou} min={0} max={1} step={0.05}
@@ -123,12 +123,12 @@ export function ConfigView() {
       </div>
 
       <FloatingBar visible={isDirty}>
-        <span className="text-sm text-amber-600 font-medium">有未保存的修改</span>
+        <span className="text-base text-amber-600 font-medium">有未保存的修改</span>
         <CrystalButton variant="danger" size="sm" onClick={handleReset}>
-          <span className="flex items-center gap-1"><RotateCcw size={14} /> 重置</span>
+          <span className="flex items-center gap-1.5"><RotateCcw size={16} /> 重置</span>
         </CrystalButton>
         <CrystalButton variant="primary" size="sm" onClick={handleSave}>
-          <span className="flex items-center gap-1"><Save size={14} /> 保存配置</span>
+          <span className="flex items-center gap-1.5"><Save size={16} /> 保存配置</span>
         </CrystalButton>
       </FloatingBar>
     </div>

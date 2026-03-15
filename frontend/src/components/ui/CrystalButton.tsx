@@ -9,9 +9,9 @@ interface CrystalButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const sizeClasses = {
-  sm: 'px-3 py-1.5 text-xs',
-  md: 'px-4 py-2 text-sm',
-  lg: 'px-6 py-3 text-base',
+  sm: 'px-3.5 py-2 text-sm',
+  md: 'px-4.5 py-2.5 text-base',
+  lg: 'px-6.5 py-3.5 text-base',
 };
 
 export function CrystalButton({

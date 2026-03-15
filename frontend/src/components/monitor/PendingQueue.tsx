@@ -35,14 +35,14 @@ export function PendingQueue() {
   };
 
   return (
-    <div className="w-72 glass rounded-2xl flex flex-col glow-border">
+    <div className="w-80 glass rounded-2xl flex flex-col glow-border">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-white/20 flex items-center justify-between">
+      <div className="px-4 py-3.5 border-b border-white/20 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <AlertTriangle size={16} className="text-amber-500" />
-          <span className="text-sm font-semibold text-gray-700">待处理队列</span>
+          <AlertTriangle size={18} className="text-amber-500" />
+          <span className="text-base font-semibold text-gray-700">待处理队列</span>
         </div>
-        <span className="text-xs text-gray-400 bg-white/40 px-2 py-0.5 rounded-full">
+        <span className="text-sm text-gray-500 bg-white/40 px-2.5 py-0.5 rounded-full">
           {pendingAlerts.length}
         </span>
       </div>
@@ -68,16 +68,16 @@ export function PendingQueue() {
                 <img
                   src={alert.image_url}
                   alt={`Frame ${alert.frame_id}`}
-                  className="w-full h-28 object-cover"
+                  className="w-full h-32 object-cover"
                 />
-                <div className="absolute top-1 right-1 bg-red-500/80 text-white text-[10px]
-                  px-1.5 py-0.5 rounded-md font-medium">
+                <div className="absolute top-1 right-1 bg-red-500/80 text-white text-xs
+                  px-2 py-0.5 rounded-md font-medium">
                   {alert.detections.filter((d) => d.is_uncertain).length} 异常
                 </div>
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-gray-400 font-mono">
+                <span className="text-xs text-gray-400 font-mono">
                   #{alert.frame_id}
                 </span>
                 <div className="flex gap-1">
@@ -86,14 +86,14 @@ export function PendingQueue() {
                     size="sm"
                     onClick={() => handleLabel(alert.frame_id, true)}
                   >
-                    <Check size={12} />
+                    <Check size={14} />
                   </CrystalButton>
                   <CrystalButton
                     variant="danger"
                     size="sm"
                     onClick={() => handleLabel(alert.frame_id, false)}
                   >
-                    <X size={12} />
+                    <X size={14} />
                   </CrystalButton>
                 </div>
               </div>
@@ -103,8 +103,8 @@ export function PendingQueue() {
 
         {pendingAlerts.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-            <Check size={24} className="mb-2 opacity-40" />
-            <p className="text-xs">暂无待处理事件</p>
+            <Check size={28} className="mb-2 opacity-40" />
+            <p className="text-sm">暂无待处理事件</p>
           </div>
         )}
       </div>
@@ -118,8 +118,8 @@ export function PendingQueue() {
             className="w-full"
             onClick={handleAIJudge}
           >
-            <span className="flex items-center justify-center gap-1.5">
-              <Bot size={14} /> AI 一键判断
+            <span className="flex items-center justify-center gap-2">
+              <Bot size={16} /> AI 一键判断
             </span>
           </CrystalButton>
         </div>

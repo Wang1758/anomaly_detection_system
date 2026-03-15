@@ -17,7 +17,7 @@ export function FloatingBar({ visible, children }: FloatingBarProps) {
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40"
         >
-          <div className="glass rounded-2xl px-6 py-3 flex items-center gap-4 glow-border">
+          <div className="glass rounded-2xl px-6 py-3.5 flex items-center gap-4.5 glow-border">
             {children}
           </div>
         </motion.div>

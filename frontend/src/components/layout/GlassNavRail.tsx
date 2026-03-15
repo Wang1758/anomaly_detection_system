@@ -22,11 +22,11 @@ export function GlassNavRail() {
       ref={ref}
       onMouseMove={onMouseMove}
       onMouseLeave={onMouseLeave}
-      className="w-24 glass rounded-[32px] flex flex-col items-center py-8 gap-2 glow-border"
+      className="w-28 glass rounded-[32px] flex flex-col items-center py-9 gap-3 glow-border"
     >
-      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400/30 to-indigo-500/30
+      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400/30 to-indigo-500/30
         flex items-center justify-center mb-6 border border-white/40">
-        <Eye size={20} className="text-blue-600" />
+        <Eye size={22} className="text-blue-600" />
       </div>
 
       <div className="flex flex-col gap-1 flex-1">
@@ -36,7 +36,7 @@ export function GlassNavRail() {
             <button
               key={id}
               onClick={() => setCurrentView(id)}
-              className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center gap-1
+              className={`w-20 h-20 rounded-2xl flex flex-col items-center justify-center gap-1.5
                 transition-all duration-300
                 ${active
                   ? 'bg-white/70 shadow-lg shadow-blue-500/10 border border-white/60'
@@ -44,11 +44,11 @@ export function GlassNavRail() {
                 }`}
             >
               <Icon
-                size={20}
+                size={22}
                 className={active ? 'text-blue-600' : 'text-gray-500'}
               />
               <span
-                className={`text-[10px] font-medium ${
+                className={`text-xs font-medium ${
                   active ? 'text-blue-600' : 'text-gray-500'
                 }`}
               >

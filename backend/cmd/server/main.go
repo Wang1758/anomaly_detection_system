@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 
 	"anomaly_detection_system/backend/internal/config"
 	"anomaly_detection_system/backend/internal/db"
@@ -76,6 +77,22 @@ func main() {
 
 		api.GET("/images/:filename", apiHandler.ServeImage)
 	}
+
+	// Root hint to avoid 404 when opening backend port in browser
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"service":         "anomaly-detection-backend",
+			"message":         "Backend is running. Open frontend at http://localhost:3000",
+			"frontend_url":    "http://localhost:3000",
+			"api_base":        "/api",
+			"stream_endpoint": "/api/stream/mjpeg",
+			"ws_endpoint":     "/ws/events",
+		})
+	})
+
+	r.GET("/favicon.ico", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
 
 	// MJPEG stream
 	r.GET("/api/stream/mjpeg", streamHandler.ServeMJPEG)

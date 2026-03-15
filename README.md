@@ -51,6 +51,8 @@ docker-compose up --build
 - Backend API: http://localhost:8080
 - AI gRPC: localhost:50051
 
+注意：`http://localhost:8080/` 是后端服务入口（API/流服务），前端页面请访问 `http://localhost:3000/`。
+
 ### 本地开发启动
 
 **1. AI Service (Python)**
