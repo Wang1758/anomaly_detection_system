@@ -68,13 +68,10 @@ python server.py
 ```bash
 cd backend
 go mod tidy
-go run ./cmd/server
-
-# 带真实视频采集（需要 OpenCV）
 go run -tags gocv ./cmd/server/
 ```
 
-> 注：GoCV 需要安装 OpenCV。未安装时系统自动使用 fallback 模式 (合成帧/图片目录)。
+> 注：后端仅支持 GoCV 模式，请先安装 OpenCV 后再启动。
 
 **3. Frontend (React)**
 

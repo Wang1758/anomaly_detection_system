@@ -1,5 +1,3 @@
-//go:build gocv
-
 package pipeline
 
 import (
