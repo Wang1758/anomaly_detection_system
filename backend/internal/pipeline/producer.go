@@ -64,7 +64,8 @@ func (p *Producer) Run(ctx context.Context, pool *OrderedPool) error {
 				log.Printf("Producer: encode error: %v", err)
 				continue
 			}
-			task := &Task{SeqNo: seqNo, ImageBytes: buf.GetBytes()}
+			encoded := append([]byte(nil), buf.GetBytes()...)
+			task := &Task{SeqNo: seqNo, ImageBytes: encoded}
 			buf.Close()
 			if !pool.Submit(ctx, task) {
 				return nil

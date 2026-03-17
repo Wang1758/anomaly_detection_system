@@ -3,6 +3,7 @@
 import math
 import random
 import logging
+import threading
 import numpy as np
 import cv2
 
@@ -50,6 +51,7 @@ class Detector:
     def __init__(self, model_manager, params: DetectorParams | None = None):
         self._mm = model_manager
         self.params = params or DetectorParams()
+        self._infer_lock = threading.Lock()
 
     def detect(self, image: np.ndarray) -> list[dict]:
         """Run detection on image, return list of detection dicts."""
@@ -59,12 +61,13 @@ class Detector:
         return self._mock_detect(image)
 
     def _real_detect(self, image: np.ndarray, model) -> list[dict]:
-        results = model(
-            image,
-            conf=self.params.confidence_threshold,
-            iou=self.params.nms_threshold,
-            verbose=False,
-        )
+        with self._infer_lock:
+            results = model(
+                image,
+                conf=self.params.confidence_threshold,
+                iou=self.params.nms_threshold,
+                verbose=False,
+            )
 
         detections = []
         if not results or len(results) == 0:

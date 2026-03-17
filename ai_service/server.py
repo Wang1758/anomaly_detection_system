@@ -22,10 +22,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MODEL_DIR = os.environ.get("MODEL_DIR", "models")
-DEFAULT_MODEL = os.path.join(MODEL_DIR, "best.pt")
+MODEL_DIR = "models"
+DEFAULT_MODEL = "best.pt"
 GRPC_PORT = os.environ.get("GRPC_PORT", "50051")
-MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "4"))
+MAX_WORKERS = 4
 
 
 class DetectionServicer(detection_pb2_grpc.DetectionServiceServicer):

@@ -3,6 +3,7 @@
 import threading
 import logging
 from pathlib import Path
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class ModelManager:
 
     def load_initial(self, model_path: str | None = None):
         """Load the initial model on startup. Falls back to mock mode if unavailable."""
+        model_path = os.path.join(self._model_dir, model_path)
         if model_path and Path(model_path).exists():
             try:
                 from ultralytics import YOLO
