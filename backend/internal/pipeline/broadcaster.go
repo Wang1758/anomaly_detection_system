@@ -11,6 +11,8 @@ import (
 	"anomaly_detection_system/backend/internal/db"
 	"anomaly_detection_system/backend/internal/filter"
 	"anomaly_detection_system/backend/internal/models"
+
+	"gorm.io/gorm/clause"
 )
 
 // Broadcaster consumes ordered results and fans out to video stream + alert channel.
@@ -70,6 +72,9 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 	}
 
 	visFrame := r.Result.VisualizedImage
+	if len(visFrame) == 0 {
+		return
+	}
 
 	// Update latest frame and broadcast to MJPEG subscribers
 	b.mu.Lock()
@@ -96,11 +101,11 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 		if d.IsUncertain {
 			det := models.DetectionMeta{
 				X1: d.X1, Y1: d.Y1, X2: d.X2, Y2: d.Y2,
-				Confidence:  d.Confidence,
-				ClassID:     d.ClassId,
-				ClassName:   d.ClassName,
-				IsUncertain: d.IsUncertain,
-				Entropy:     d.Entropy,
+				Confidence:   d.Confidence,
+				ClassID:      d.ClassId,
+				ClassName:    d.ClassName,
+				IsUncertain:  d.IsUncertain,
+				Entropy:      d.Entropy,
 				AnomalyScore: d.AnomalyScore,
 			}
 			if b.filter.ShouldAlert(det) {
@@ -132,7 +137,10 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 		ImagePath: imgPath,
 		Status:    "pending",
 	}
-	if err := db.DB.Create(&sample).Error; err != nil {
+	if err := db.DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "frame_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"image_path", "status", "updated_at"}),
+	}).Create(&sample).Error; err != nil {
 		log.Printf("Failed to save sample: %v", err)
 	}
 

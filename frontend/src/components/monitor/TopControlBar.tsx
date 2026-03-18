@@ -3,16 +3,18 @@ import { Video, FolderOpen, Play, Square } from 'lucide-react';
 import { CrystalButton } from '../ui/CrystalButton';
 import { useAppStore } from '../../stores/appStore';
 
+const DEFAULT_LOCAL_VIDEO = '../data/videos/1.mp4';
+
 export function TopControlBar() {
   const { config, setConfig, pipelineRunning, setPipelineRunning } = useAppStore();
   const [sourceType, setSourceType] = useState<'rtsp' | 'local'>(config?.source_type || 'local');
-  const [sourceAddr, setSourceAddr] = useState(config?.source_addr || '');
+  const [sourceAddr, setSourceAddr] = useState(config?.source_addr || DEFAULT_LOCAL_VIDEO);
   const [fps, setFps] = useState(config?.fps || 30);
 
   useEffect(() => {
     if (config) {
       setSourceType(config.source_type);
-      setSourceAddr(config.source_addr);
+      setSourceAddr(config.source_addr || (config.source_type === 'local' ? DEFAULT_LOCAL_VIDEO : ''));
       setFps(config.fps);
     }
   }, [config]);
@@ -124,7 +126,7 @@ export function TopControlBar() {
       {/* Action buttons */}
       <CrystalButton variant="primary" size="sm" onClick={handleApply}>
         <span className="flex items-center gap-2">
-          <Play size={16} /> 应用
+          <Play size={16} /> 启动
         </span>
       </CrystalButton>
 

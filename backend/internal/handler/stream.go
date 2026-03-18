@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"anomaly_detection_system/backend/internal/pipeline"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -33,23 +34,36 @@ func (h *StreamHandler) ServeMJPEG(c *gin.Context) {
 	sub := bc.SubscribeMJPEG()
 	defer bc.UnsubscribeMJPEG(sub)
 
+	writeFrame := func(frame []byte) bool {
+		header := fmt.Sprintf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n", len(frame))
+		if _, err := c.Writer.WriteString(header); err != nil {
+			return false
+		}
+		if _, err := c.Writer.Write(frame); err != nil {
+			return false
+		}
+		if _, err := c.Writer.WriteString("\r\n"); err != nil {
+			return false
+		}
+		c.Writer.Flush()
+		return true
+	}
+
+	if latest := bc.GetLatestFrame(); len(latest) > 0 {
+		if !writeFrame(latest) {
+			return
+		}
+	}
+
 	for {
 		select {
 		case frame, ok := <-sub:
 			if !ok {
 				return
 			}
-			header := fmt.Sprintf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n", len(frame))
-			if _, err := c.Writer.WriteString(header); err != nil {
+			if !writeFrame(frame) {
 				return
 			}
-			if _, err := c.Writer.Write(frame); err != nil {
-				return
-			}
-			if _, err := c.Writer.WriteString("\r\n"); err != nil {
-				return
-			}
-			c.Writer.Flush()
 		case <-c.Request.Context().Done():
 			return
 		case <-time.After(30 * time.Second):
