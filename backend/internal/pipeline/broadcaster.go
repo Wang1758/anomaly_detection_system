@@ -118,23 +118,32 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 		return
 	}
 
-	// Save original image to disk
 	imgDir := filepath.Join(b.dataDir, "images")
 	os.MkdirAll(imgDir, 0755)
-	imgName := fmt.Sprintf("frame_%d.jpg", r.Result.FrameId)
-	imgPath := filepath.Join(imgDir, imgName)
 
+	// Save original (clean) image for training data
+	origName := fmt.Sprintf("frame_%d.jpg", r.Result.FrameId)
+	origPath := filepath.Join(imgDir, origName)
 	if len(r.Result.OriginalImage) > 0 {
-		if err := os.WriteFile(imgPath, r.Result.OriginalImage, 0644); err != nil {
-			log.Printf("Failed to save image: %v", err)
+		if err := os.WriteFile(origPath, r.Result.OriginalImage, 0644); err != nil {
+			log.Printf("Failed to save original image: %v", err)
 			return
 		}
 	}
 
-	// Save to database
+	// Save visualized image (with annotated boxes) for alert display
+	visName := fmt.Sprintf("vis_frame_%d.jpg", r.Result.FrameId)
+	visPath := filepath.Join(imgDir, visName)
+	if len(visFrame) > 0 {
+		if err := os.WriteFile(visPath, visFrame, 0644); err != nil {
+			log.Printf("Failed to save visualized image: %v", err)
+		}
+	}
+
+	// Save to database (image_path points to clean original for training)
 	sample := models.Sample{
 		FrameID:   r.Result.FrameId,
-		ImagePath: imgPath,
+		ImagePath: origPath,
 		Status:    "pending",
 	}
 	if err := db.DB.Clauses(clause.OnConflict{
@@ -144,11 +153,11 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 		log.Printf("Failed to save sample: %v", err)
 	}
 
-	// Push alert event
+	// Push alert event with the annotated visualization for the frontend
 	event := &models.AlertEvent{
 		Type:       "alert",
 		FrameID:    r.Result.FrameId,
-		ImageURL:   fmt.Sprintf("/api/images/%s", imgName),
+		ImageURL:   fmt.Sprintf("/api/images/%s", visName),
 		Detections: uncertainDets,
 		Timestamp:  time.Now().Format(time.RFC3339),
 	}

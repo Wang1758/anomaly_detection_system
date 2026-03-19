@@ -14,10 +14,12 @@ type Config struct {
 	W2                  float32 `json:"w2"`
 
 	// Pipeline
-	SourceType string `json:"source_type"` // "rtsp" or "local"
-	SourceAddr string `json:"source_addr"`
-	FPS        int    `json:"fps"`
-	Workers    int    `json:"workers"`
+	SourceType   string `json:"source_type"` // "rtsp" or "local"
+	SourceAddr   string `json:"source_addr"`
+	FPS          int    `json:"fps"`
+	Workers      int    `json:"workers"`
+	BatchSize    int    `json:"batch_size"`
+	BatchTimeout int    `json:"batch_timeout_ms"` // milliseconds
 
 	// Spatiotemporal filter
 	FilterTimeWindow float64 `json:"filter_time_window"` // seconds
@@ -52,6 +54,8 @@ func Default() *Config {
 		SourceAddr:          "",
 		FPS:                 30,
 		Workers:             4,
+		BatchSize:           8,
+		BatchTimeout:        200,
 		FilterTimeWindow:    60.0,
 		FilterIoU:           0.5,
 		ServerPort:          ":8080",

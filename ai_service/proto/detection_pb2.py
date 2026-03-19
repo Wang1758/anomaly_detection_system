@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x64\x65tection.proto\x12\tdetection\"0\n\rDetectRequest\x12\r\n\x05image\x18\x01 \x01(\x0c\x12\x10\n\x08\x66rame_id\x18\x02 \x01(\x03\"\x99\x01\n\x0e\x44\x65tectResponse\x12\x18\n\x10visualized_image\x18\x01 \x01(\x0c\x12\x16\n\x0eoriginal_image\x18\x02 \x01(\x0c\x12,\n\ndetections\x18\x03 \x03(\x0b\x32\x18.detection.DetectionMeta\x12\x15\n\rhas_uncertain\x18\x04 \x01(\x08\x12\x10\n\x08\x66rame_id\x18\x05 \x01(\x03\"\xb7\x01\n\rDetectionMeta\x12\n\n\x02x1\x18\x01 \x01(\x02\x12\n\n\x02y1\x18\x02 \x01(\x02\x12\n\n\x02x2\x18\x03 \x01(\x02\x12\n\n\x02y2\x18\x04 \x01(\x02\x12\x12\n\nconfidence\x18\x05 \x01(\x02\x12\x10\n\x08\x63lass_id\x18\x06 \x01(\x05\x12\x12\n\nclass_name\x18\x07 \x01(\t\x12\x14\n\x0cis_uncertain\x18\x08 \x01(\x08\x12\x0f\n\x07\x65ntropy\x18\t \x01(\x02\x12\x15\n\ranomaly_score\x18\n \x01(\x02\"#\n\rReloadRequest\x12\x12\n\nmodel_path\x18\x01 \x01(\t\"2\n\x0eReloadResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"w\n\rParamsRequest\x12\x15\n\rnms_threshold\x18\x01 \x01(\x02\x12\x1c\n\x14\x63onfidence_threshold\x18\x02 \x01(\x02\x12\x19\n\x11\x65ntropy_threshold\x18\x03 \x01(\x02\x12\n\n\x02w1\x18\x04 \x01(\x02\x12\n\n\x02w2\x18\x05 \x01(\x02\"2\n\x0eParamsResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t2\xda\x01\n\x10\x44\x65tectionService\x12=\n\x06\x44\x65tect\x12\x18.detection.DetectRequest\x1a\x19.detection.DetectResponse\x12\x42\n\x0bReloadModel\x12\x18.detection.ReloadRequest\x1a\x19.detection.ReloadResponse\x12\x43\n\x0cUpdateParams\x12\x18.detection.ParamsRequest\x1a\x19.detection.ParamsResponseB9Z7anomaly_detection_system/backend/internal/grpcclient/pbb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x64\x65tection.proto\x12\tdetection\"7\n\x12\x42\x61tchDetectRequest\x12\x0e\n\x06images\x18\x01 \x03(\x0c\x12\x11\n\tframe_ids\x18\x02 \x03(\x03\"A\n\x13\x42\x61tchDetectResponse\x12*\n\x07results\x18\x01 \x03(\x0b\x32\x19.detection.DetectResponse\"0\n\rDetectRequest\x12\r\n\x05image\x18\x01 \x01(\x0c\x12\x10\n\x08\x66rame_id\x18\x02 \x01(\x03\"\x99\x01\n\x0e\x44\x65tectResponse\x12\x18\n\x10visualized_image\x18\x01 \x01(\x0c\x12\x16\n\x0eoriginal_image\x18\x02 \x01(\x0c\x12,\n\ndetections\x18\x03 \x03(\x0b\x32\x18.detection.DetectionMeta\x12\x15\n\rhas_uncertain\x18\x04 \x01(\x08\x12\x10\n\x08\x66rame_id\x18\x05 \x01(\x03\"\xb7\x01\n\rDetectionMeta\x12\n\n\x02x1\x18\x01 \x01(\x02\x12\n\n\x02y1\x18\x02 \x01(\x02\x12\n\n\x02x2\x18\x03 \x01(\x02\x12\n\n\x02y2\x18\x04 \x01(\x02\x12\x12\n\nconfidence\x18\x05 \x01(\x02\x12\x10\n\x08\x63lass_id\x18\x06 \x01(\x05\x12\x12\n\nclass_name\x18\x07 \x01(\t\x12\x14\n\x0cis_uncertain\x18\x08 \x01(\x08\x12\x0f\n\x07\x65ntropy\x18\t \x01(\x02\x12\x15\n\ranomaly_score\x18\n \x01(\x02\"#\n\rReloadRequest\x12\x12\n\nmodel_path\x18\x01 \x01(\t\"2\n\x0eReloadResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"w\n\rParamsRequest\x12\x15\n\rnms_threshold\x18\x01 \x01(\x02\x12\x1c\n\x14\x63onfidence_threshold\x18\x02 \x01(\x02\x12\x19\n\x11\x65ntropy_threshold\x18\x03 \x01(\x02\x12\n\n\x02w1\x18\x04 \x01(\x02\x12\n\n\x02w2\x18\x05 \x01(\x02\"2\n\x0eParamsResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t2\xa8\x02\n\x10\x44\x65tectionService\x12=\n\x06\x44\x65tect\x12\x18.detection.DetectRequest\x1a\x19.detection.DetectResponse\x12L\n\x0b\x42\x61tchDetect\x12\x1d.detection.BatchDetectRequest\x1a\x1e.detection.BatchDetectResponse\x12\x42\n\x0bReloadModel\x12\x18.detection.ReloadRequest\x1a\x19.detection.ReloadResponse\x12\x43\n\x0cUpdateParams\x12\x18.detection.ParamsRequest\x1a\x19.detection.ParamsResponseB9Z7anomaly_detection_system/backend/internal/grpcclient/pbb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,20 +32,24 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'detection_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z7anomaly_detection_system/backend/internal/grpcclient/pb'
-  _globals['_DETECTREQUEST']._serialized_start=30
-  _globals['_DETECTREQUEST']._serialized_end=78
-  _globals['_DETECTRESPONSE']._serialized_start=81
-  _globals['_DETECTRESPONSE']._serialized_end=234
-  _globals['_DETECTIONMETA']._serialized_start=237
-  _globals['_DETECTIONMETA']._serialized_end=420
-  _globals['_RELOADREQUEST']._serialized_start=422
-  _globals['_RELOADREQUEST']._serialized_end=457
-  _globals['_RELOADRESPONSE']._serialized_start=459
-  _globals['_RELOADRESPONSE']._serialized_end=509
-  _globals['_PARAMSREQUEST']._serialized_start=511
-  _globals['_PARAMSREQUEST']._serialized_end=630
-  _globals['_PARAMSRESPONSE']._serialized_start=632
-  _globals['_PARAMSRESPONSE']._serialized_end=682
-  _globals['_DETECTIONSERVICE']._serialized_start=685
-  _globals['_DETECTIONSERVICE']._serialized_end=903
+  _globals['_BATCHDETECTREQUEST']._serialized_start=30
+  _globals['_BATCHDETECTREQUEST']._serialized_end=85
+  _globals['_BATCHDETECTRESPONSE']._serialized_start=87
+  _globals['_BATCHDETECTRESPONSE']._serialized_end=152
+  _globals['_DETECTREQUEST']._serialized_start=154
+  _globals['_DETECTREQUEST']._serialized_end=202
+  _globals['_DETECTRESPONSE']._serialized_start=205
+  _globals['_DETECTRESPONSE']._serialized_end=358
+  _globals['_DETECTIONMETA']._serialized_start=361
+  _globals['_DETECTIONMETA']._serialized_end=544
+  _globals['_RELOADREQUEST']._serialized_start=546
+  _globals['_RELOADREQUEST']._serialized_end=581
+  _globals['_RELOADRESPONSE']._serialized_start=583
+  _globals['_RELOADRESPONSE']._serialized_end=633
+  _globals['_PARAMSREQUEST']._serialized_start=635
+  _globals['_PARAMSREQUEST']._serialized_end=754
+  _globals['_PARAMSRESPONSE']._serialized_start=756
+  _globals['_PARAMSRESPONSE']._serialized_end=806
+  _globals['_DETECTIONSERVICE']._serialized_start=809
+  _globals['_DETECTIONSERVICE']._serialized_end=1105
 # @@protoc_insertion_point(module_scope)

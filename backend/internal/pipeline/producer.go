@@ -25,6 +25,24 @@ func NewProducer(sourceType, sourceAddr string, fps int) *Producer {
 }
 
 func (p *Producer) Run(ctx context.Context, pool *OrderedPool) error {
+	return p.run(ctx, func(task *Task) bool {
+		return pool.Submit(ctx, task)
+	})
+}
+
+// RunCh sends frames to a plain channel (used by BatchProcessor pipeline).
+func (p *Producer) RunCh(ctx context.Context, ch chan<- *Task) error {
+	return p.run(ctx, func(task *Task) bool {
+		select {
+		case ch <- task:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	})
+}
+
+func (p *Producer) run(ctx context.Context, emit func(*Task) bool) error {
 	var cap *gocv.VideoCapture
 	var err error
 
@@ -65,7 +83,7 @@ func (p *Producer) Run(ctx context.Context, pool *OrderedPool) error {
 			encoded := append([]byte(nil), buf.GetBytes()...)
 			task := &Task{SeqNo: seqNo, ImageBytes: encoded}
 			buf.Close()
-			if !pool.Submit(ctx, task) {
+			if !emit(task) {
 				return nil
 			}
 			seqNo++

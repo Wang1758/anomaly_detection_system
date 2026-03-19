@@ -6,8 +6,18 @@ option go_package = "anomaly_detection_system/backend/internal/grpcclient/pb";
 
 service DetectionService {
   rpc Detect (DetectRequest) returns (DetectResponse);
+  rpc BatchDetect (BatchDetectRequest) returns (BatchDetectResponse);
   rpc ReloadModel (ReloadRequest) returns (ReloadResponse);
   rpc UpdateParams (ParamsRequest) returns (ParamsResponse);
+}
+
+message BatchDetectRequest {
+  repeated bytes images = 1;
+  repeated int64 frame_ids = 2;
+}
+
+message BatchDetectResponse {
+  repeated DetectResponse results = 1;
 }
 
 message DetectRequest {

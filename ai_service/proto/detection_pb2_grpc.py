@@ -39,6 +39,11 @@ class DetectionServiceStub(object):
                 request_serializer=detection__pb2.DetectRequest.SerializeToString,
                 response_deserializer=detection__pb2.DetectResponse.FromString,
                 _registered_method=True)
+        self.BatchDetect = channel.unary_unary(
+                '/detection.DetectionService/BatchDetect',
+                request_serializer=detection__pb2.BatchDetectRequest.SerializeToString,
+                response_deserializer=detection__pb2.BatchDetectResponse.FromString,
+                _registered_method=True)
         self.ReloadModel = channel.unary_unary(
                 '/detection.DetectionService/ReloadModel',
                 request_serializer=detection__pb2.ReloadRequest.SerializeToString,
@@ -55,6 +60,12 @@ class DetectionServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def Detect(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def BatchDetect(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -79,6 +90,11 @@ def add_DetectionServiceServicer_to_server(servicer, server):
                     servicer.Detect,
                     request_deserializer=detection__pb2.DetectRequest.FromString,
                     response_serializer=detection__pb2.DetectResponse.SerializeToString,
+            ),
+            'BatchDetect': grpc.unary_unary_rpc_method_handler(
+                    servicer.BatchDetect,
+                    request_deserializer=detection__pb2.BatchDetectRequest.FromString,
+                    response_serializer=detection__pb2.BatchDetectResponse.SerializeToString,
             ),
             'ReloadModel': grpc.unary_unary_rpc_method_handler(
                     servicer.ReloadModel,
@@ -118,6 +134,33 @@ class DetectionService(object):
             '/detection.DetectionService/Detect',
             detection__pb2.DetectRequest.SerializeToString,
             detection__pb2.DetectResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def BatchDetect(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/detection.DetectionService/BatchDetect',
+            detection__pb2.BatchDetectRequest.SerializeToString,
+            detection__pb2.BatchDetectResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -39,6 +39,15 @@ func (c *Client) Detect(ctx context.Context, imageBytes []byte, frameID int64) (
 	})
 }
 
+func (c *Client) BatchDetect(ctx context.Context, images [][]byte, frameIDs []int64) (*pb.BatchDetectResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	return c.client.BatchDetect(ctx, &pb.BatchDetectRequest{
+		Images:   images,
+		FrameIds: frameIDs,
+	})
+}
+
 func (c *Client) ReloadModel(ctx context.Context, modelPath string) (*pb.ReloadResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
