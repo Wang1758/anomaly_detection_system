@@ -11,6 +11,7 @@ import (
 	"anomaly_detection_system/backend/internal/grpcclient"
 	"anomaly_detection_system/backend/internal/models"
 	"anomaly_detection_system/backend/internal/pipeline"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -198,6 +199,10 @@ func (h *APIHandler) StartPipeline(c *gin.Context) {
 func (h *APIHandler) StopPipeline(c *gin.Context) {
 	h.pipe.Stop()
 	c.JSON(http.StatusOK, gin.H{"message": "pipeline stopped"})
+}
+
+func (h *APIHandler) PipelineStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"running": h.pipe.IsRunning()})
 }
 
 // --- Image serving ---

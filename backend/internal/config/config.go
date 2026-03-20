@@ -44,7 +44,7 @@ func Get() *Config {
 
 func Default() *Config {
 	return &Config{
-		AIServiceAddr:       "localhost:50051",
+		AIServiceAddr:       "192.168.3.23:50051", // python服务地址
 		NMSThreshold:        0.8,
 		ConfidenceThreshold: 0.25,
 		EntropyThreshold:    0.5,
@@ -59,14 +59,31 @@ func Default() *Config {
 		FilterTimeWindow:    60.0,
 		FilterIoU:           0.5,
 		ServerPort:          ":8080",
-		DataDir:             "./data",
+		DataDir:             "../data",
 	}
 }
 
-func (c *Config) Read() Config {
+func (c *Config) Read() *Config {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return *c
+	return &Config{
+		AIServiceAddr:       c.AIServiceAddr,
+		NMSThreshold:        c.NMSThreshold,
+		ConfidenceThreshold: c.ConfidenceThreshold,
+		EntropyThreshold:    c.EntropyThreshold,
+		W1:                  c.W1,
+		W2:                  c.W2,
+		SourceType:          c.SourceType,
+		SourceAddr:          c.SourceAddr,
+		FPS:                 c.FPS,
+		Workers:             c.Workers,
+		BatchSize:           c.BatchSize,
+		BatchTimeout:        c.BatchTimeout,
+		FilterTimeWindow:    c.FilterTimeWindow,
+		FilterIoU:           c.FilterIoU,
+		ServerPort:          c.ServerPort,
+		DataDir:             c.DataDir,
+	}
 }
 
 func (c *Config) Update(fn func(*Config)) {

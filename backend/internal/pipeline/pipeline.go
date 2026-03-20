@@ -56,8 +56,12 @@ func (p *Pipeline) Start() error {
 	p.cancel = cancel
 
 	f := filter.NewSpatiotemporalFilter(snap.FilterTimeWindow, snap.FilterIoU)
-	broadcaster := NewBroadcaster(f, snap.DataDir)
-	p.broadcaster = broadcaster
+	if p.broadcaster == nil {
+		p.broadcaster = NewBroadcaster(f, snap.DataDir)
+	} else {
+		p.broadcaster.ResetForNewRun(f, snap.DataDir)
+	}
+	broadcaster := p.broadcaster
 
 	producer := NewProducer(snap.SourceType, snap.SourceAddr, snap.FPS)
 
@@ -85,6 +89,14 @@ func (p *Pipeline) Start() error {
 			broadcaster.HandleResult(r)
 		}
 		log.Println("Pipeline consumer stopped")
+
+		p.mu.Lock()
+		if p.running {
+			p.running = false
+			p.cancel = nil
+			log.Println("Pipeline finished")
+		}
+		p.mu.Unlock()
 	}()
 
 	p.running = true
@@ -101,7 +113,10 @@ func (p *Pipeline) Stop() {
 		return
 	}
 
-	p.cancel()
+	if p.cancel != nil {
+		p.cancel()
+		p.cancel = nil
+	}
 	p.running = false
 	log.Println("Pipeline stopped")
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
 	"anomaly_detection_system/backend/internal/config"
 	"anomaly_detection_system/backend/internal/db"
@@ -16,10 +17,10 @@ import (
 func main() {
 	cfg := config.Get()
 
-	// Local overrides
-	aiServiceAddr := "localhost:50051" // ai 服务grpc地址
-	serverPort := ":8080"              // 当前go服务监听地址
-	dataDir := "../data"               // 数据库文件存放位置
+	// Runtime overrides from environment
+	aiServiceAddr := cfg.AIServiceAddr
+	serverPort := cfg.ServerPort
+	dataDir := cfg.DataDir
 
 	cfg.AIServiceAddr = aiServiceAddr
 	cfg.ServerPort = serverPort
@@ -74,6 +75,7 @@ func main() {
 
 		api.POST("/pipeline/start", apiHandler.StartPipeline)
 		api.POST("/pipeline/stop", apiHandler.StopPipeline)
+		api.GET("/pipeline/status", apiHandler.PipelineStatus)
 
 		api.GET("/images/:filename", apiHandler.ServeImage)
 	}
@@ -104,4 +106,11 @@ func main() {
 	if err := r.Run(cfg.ServerPort); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+func getEnv(key string, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

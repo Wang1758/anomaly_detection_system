@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Video, FolderOpen, Play, Square } from 'lucide-react';
 import { CrystalButton } from '../ui/CrystalButton';
 import { useAppStore } from '../../stores/appStore';
@@ -11,6 +11,17 @@ export function TopControlBar() {
   const [sourceAddr, setSourceAddr] = useState(config?.source_addr || DEFAULT_LOCAL_VIDEO);
   const [fps, setFps] = useState(config?.fps || 30);
 
+  const syncPipelineStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/pipeline/status');
+      if (!res.ok) return;
+      const data = await res.json();
+      setPipelineRunning(Boolean(data?.running));
+    } catch {
+      // keep current UI state on transient network errors
+    }
+  }, [setPipelineRunning]);
+
   useEffect(() => {
     if (config) {
       setSourceType(config.source_type);
@@ -18,6 +29,12 @@ export function TopControlBar() {
       setFps(config.fps);
     }
   }, [config]);
+
+  useEffect(() => {
+    syncPipelineStatus();
+    const timer = window.setInterval(syncPipelineStatus, 2000);
+    return () => window.clearInterval(timer);
+  }, [syncPipelineStatus]);
 
   const handleApply = async () => {
     try {
@@ -28,10 +45,8 @@ export function TopControlBar() {
       });
       setConfig({ ...config!, source_type: sourceType, source_addr: sourceAddr, fps });
 
-      if (!pipelineRunning) {
-        await fetch('/api/pipeline/start', { method: 'POST' });
-        setPipelineRunning(true);
-      }
+      await fetch('/api/pipeline/start', { method: 'POST' });
+      await syncPipelineStatus();
     } catch (e) {
       console.error('Apply failed:', e);
     }
@@ -60,7 +75,7 @@ export function TopControlBar() {
   const handleStop = async () => {
     try {
       await fetch('/api/pipeline/stop', { method: 'POST' });
-      setPipelineRunning(false);
+      await syncPipelineStatus();
     } catch (e) {
       console.error('Stop failed:', e);
     }

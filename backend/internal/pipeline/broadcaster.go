@@ -41,6 +41,15 @@ func NewBroadcaster(f *filter.SpatiotemporalFilter, dataDir string) *Broadcaster
 	}
 }
 
+// ResetForNewRun clears stale frame and updates run-scoped settings.
+func (b *Broadcaster) ResetForNewRun(f *filter.SpatiotemporalFilter, dataDir string) {
+	b.mu.Lock()
+	b.latestFrame = nil
+	b.filter = f
+	b.dataDir = dataDir
+	b.mu.Unlock()
+}
+
 // SubscribeMJPEG returns a channel that receives JPEG frames.
 func (b *Broadcaster) SubscribeMJPEG() chan []byte {
 	ch := make(chan []byte, 2)

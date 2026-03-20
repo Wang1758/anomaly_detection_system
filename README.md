@@ -68,10 +68,30 @@ python server.py
 ```bash
 cd backend
 go mod tidy
-go run -tags gocv ./cmd/server/
+AI_SERVICE_ADDR=localhost:50051 SERVER_PORT=:8080 DATA_DIR=../data go run -tags gocv ./cmd/server/
 ```
 
 > 注：后端仅支持 GoCV 模式，请先安装 OpenCV 后再启动。
+
+### 宿主机 + 虚拟机 (NAT) 部署说明
+
+如果 Python `ai_service` 跑在宿主机，而 Go 后端跑在 VMware 虚拟机：
+
+- 不要使用 `localhost:50051` 或 `127.0.0.1:50051`（这只会指向虚拟机自身）。
+- 请将 `AI_SERVICE_ADDR` 设置为**宿主机在 VMnet8/NAT 网卡上的 IP**，例如：
+
+```bash
+cd backend
+AI_SERVICE_ADDR=192.168.***.***:50051 SERVER_PORT=:8080 DATA_DIR=../data go run -tags gocv ./cmd/server/
+```
+
+在虚拟机内可先做连通性检查：
+
+```bash
+nc -vz 192.168.***.*** 50051
+```
+
+若不通，请检查宿主机防火墙是否放行 `50051/tcp`，并确认 Python 服务已启动（`python server.py`）。
 
 **3. Frontend (React)**
 
@@ -97,6 +117,7 @@ npm run dev
 | WS | `/ws/events` | WebSocket 异常推送 |
 | POST | `/api/pipeline/start` | 启动 Pipeline |
 | POST | `/api/pipeline/stop` | 停止 Pipeline |
+| GET | `/api/pipeline/status` | 获取 Pipeline 运行状态 |
 
 ## 核心工作流
 

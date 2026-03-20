@@ -3,7 +3,7 @@ import type { AlertEvent } from '../types';
 
 export function useWebSocket(onAlert: (event: AlertEvent) => void) {
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const connect = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -41,7 +41,9 @@ export function useWebSocket(onAlert: (event: AlertEvent) => void) {
   useEffect(() => {
     connect();
     return () => {
-      clearTimeout(reconnectTimer.current);
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+      }
       wsRef.current?.close();
     };
   }, [connect]);
