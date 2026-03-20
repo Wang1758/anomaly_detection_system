@@ -10,6 +10,7 @@ import (
 
 	"anomaly_detection_system/backend/internal/models"
 	"anomaly_detection_system/backend/internal/pipeline"
+
 	"nhooyr.io/websocket"
 )
 
@@ -41,9 +42,10 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	h.mu.Lock()
 	h.clients[conn] = cancel
+	n := len(h.clients)
 	h.mu.Unlock()
 
-	log.Printf("WebSocket client connected, total=%d", len(h.clients))
+	log.Printf("WebSocket client connected, total=%d", n)
 
 	// Keep connection alive, read messages (for future bidirectional use)
 	for {
@@ -55,10 +57,11 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 	h.mu.Lock()
 	delete(h.clients, conn)
+	rem := len(h.clients)
 	h.mu.Unlock()
 	cancel()
 	conn.Close(websocket.StatusNormalClosure, "")
-	log.Printf("WebSocket client disconnected, total=%d", len(h.clients))
+	log.Printf("WebSocket client disconnected, total=%d", rem)
 }
 
 func (h *WSHub) broadcastLoop() {
@@ -83,13 +86,33 @@ func (h *WSHub) broadcast(event *models.AlertEvent) {
 	}
 
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
+	conns := make([]*websocket.Conn, 0, len(h.clients))
 	for conn := range h.clients {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
-			log.Printf("WebSocket write error: %v", err)
-		}
-		cancel()
+		conns = append(conns, conn)
 	}
+	h.mu.RUnlock()
+
+	var stale []*websocket.Conn
+	for _, conn := range conns {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		werr := conn.Write(ctx, websocket.MessageText, data)
+		cancel()
+		if werr != nil {
+			log.Printf("WebSocket write error: %v", werr)
+			stale = append(stale, conn)
+		}
+	}
+
+	if len(stale) == 0 {
+		return
+	}
+	h.mu.Lock()
+	for _, conn := range stale {
+		if cancel, ok := h.clients[conn]; ok {
+			delete(h.clients, conn)
+			cancel()
+			_ = conn.Close(websocket.StatusGoingAway, "write failed")
+		}
+	}
+	h.mu.Unlock()
 }

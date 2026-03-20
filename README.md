@@ -108,7 +108,7 @@ npm run dev
 | GET | `/api/config` | 获取当前配置 |
 | PUT | `/api/config` | 更新配置参数 |
 | POST | `/api/samples/:id/label` | 提交人工标注 |
-| POST | `/api/samples/ai-judge` | AI 批量判断 |
+| POST | `/api/samples/ai-judge` | AI 批量研判（优先调用多模态大模型看图判断，未配置 `LLM_API_KEY` 时回退到 YOLO 重检测） |
 | GET | `/api/samples?status=labeled` | 获取样本列表 |
 | PATCH | `/api/samples/:id/relabel` | 修改标签 |
 | POST | `/api/training/trigger` | 触发增量训练 |
@@ -118,6 +118,44 @@ npm run dev
 | POST | `/api/pipeline/start` | 启动 Pipeline |
 | POST | `/api/pipeline/stop` | 停止 Pipeline |
 | GET | `/api/pipeline/status` | 获取 Pipeline 运行状态 |
+
+## 环境变量
+
+项目中所有通过环境变量配置的参数如下。本地开发时在启动命令前添加，Docker 部署时在 `docker-compose.yml` 的 `environment` 中设置。
+
+### AI Service (Python)
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `GRPC_PORT` | gRPC 服务监听端口 | `50051` |
+| `MODEL_DIR` | YOLO 模型文件目录（容器内路径） | `models` |
+
+### Backend (Go)
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `AI_SERVICE_ADDR` | Python AI 服务的 gRPC 地址 | `192.168.3.23:50051` |
+| `SERVER_PORT` | 后端 HTTP 监听端口（自动补 `:` 前缀） | `:8080` |
+| `DATA_DIR` | 数据根目录（图片/数据库/模型） | `../data` |
+| `LLM_API_KEY` | 多模态大模型 API 密钥（不填则"AI一键判断"回退到 YOLO 重检测） | 无（未启用） |
+| `LLM_BASE_URL` | 多模态大模型 API 端点（兼容 OpenAI / 通义千问 / DeepSeek 等） | `https://api.openai.com/v1` |
+| `LLM_MODEL` | 多模态大模型名称 | `gpt-4o` |
+
+> `LLM_API_KEY` 不会通过 `GET /api/config` 返回给前端。
+
+**国产模型配置示例：**
+
+```bash
+# 通义千问
+LLM_API_KEY=sk-xxx LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1 LLM_MODEL=qwen-vl-max
+
+# DeepSeek
+LLM_API_KEY=sk-xxx LLM_BASE_URL=https://api.deepseek.com/v1 LLM_MODEL=deepseek-chat
+```
+
+### Frontend (React)
+
+前端本身不读取环境变量。开发模式下 Vite 代理 `/api` 和 `/ws` 到 `http://localhost:8080`（见 `vite.config.ts`）；生产模式由 Nginx 反向代理到 `backend:8080`（见 `nginx.conf`）。
 
 ## 核心工作流
 

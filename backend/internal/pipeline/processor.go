@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -76,7 +77,7 @@ func (bp *BatchProcessor) Run(ctx context.Context, inputCh <-chan *Task, outputC
 				if i < len(results) {
 					r = &OrderedResult{SeqNo: t.SeqNo, Result: results[i]}
 				} else {
-					r = &OrderedResult{SeqNo: t.SeqNo, Err: nil}
+					r = &OrderedResult{SeqNo: t.SeqNo, Err: fmt.Errorf("batch result missing index %d", i)}
 				}
 				select {
 				case outputCh <- r:

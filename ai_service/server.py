@@ -27,7 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MODEL_DIR = "models"
+MODEL_DIR = os.environ.get("MODEL_DIR", "models")
 DEFAULT_MODEL = "best.pt"
 GRPC_PORT = os.environ.get("GRPC_PORT", "50051")
 MAX_WORKERS = 4

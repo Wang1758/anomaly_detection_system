@@ -149,10 +149,10 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 		}
 	}
 
-	// Save to database (image_path points to clean original for training)
+	// Save to database (basename only; full file lives under dataDir/images)
 	sample := models.Sample{
 		FrameID:   r.Result.FrameId,
-		ImagePath: origPath,
+		ImagePath: origName,
 		Status:    "pending",
 	}
 	if err := db.DB.Clauses(clause.OnConflict{

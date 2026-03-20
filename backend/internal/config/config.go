@@ -1,6 +1,10 @@
 package config
 
-import "sync"
+import (
+	"os"
+	"strings"
+	"sync"
+)
 
 type Config struct {
 	mu sync.RWMutex
@@ -28,6 +32,11 @@ type Config struct {
 	// Server
 	ServerPort string `json:"server_port"`
 	DataDir    string `json:"data_dir"`
+
+	// LLM (multimodal) for AI Judge — loaded from env only, never exposed via API
+	LLMApiKey  string `json:"-"`
+	LLMBaseURL string `json:"-"`
+	LLMModel   string `json:"-"`
 }
 
 var (
@@ -38,8 +47,44 @@ var (
 func Get() *Config {
 	once.Do(func() {
 		global = Default()
+		applyEnvOverrides(global)
 	})
 	return global
+}
+
+// applyEnvOverrides loads AI_SERVICE_ADDR, SERVER_PORT, DATA_DIR once at startup.
+func applyEnvOverrides(c *Config) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if v := strings.TrimSpace(os.Getenv("AI_SERVICE_ADDR")); v != "" {
+		c.AIServiceAddr = v
+	}
+	if v := strings.TrimSpace(os.Getenv("SERVER_PORT")); v != "" {
+		c.ServerPort = normalizeListenAddr(v)
+	}
+	if v := strings.TrimSpace(os.Getenv("DATA_DIR")); v != "" {
+		c.DataDir = v
+	}
+	if v := strings.TrimSpace(os.Getenv("LLM_API_KEY")); v != "" {
+		c.LLMApiKey = v
+	}
+	if v := strings.TrimSpace(os.Getenv("LLM_BASE_URL")); v != "" {
+		c.LLMBaseURL = v
+	}
+	if v := strings.TrimSpace(os.Getenv("LLM_MODEL")); v != "" {
+		c.LLMModel = v
+	}
+}
+
+func normalizeListenAddr(port string) string {
+	p := strings.TrimSpace(port)
+	if p == "" {
+		return ":8080"
+	}
+	if strings.HasPrefix(p, ":") {
+		return p
+	}
+	return ":" + p
 }
 
 func Default() *Config {
@@ -60,6 +105,8 @@ func Default() *Config {
 		FilterIoU:           0.5,
 		ServerPort:          ":8080",
 		DataDir:             "../data",
+		LLMBaseURL:          "https://api.openai.com/v1",
+		LLMModel:            "gpt-4o",
 	}
 }
 
@@ -83,6 +130,9 @@ func (c *Config) Read() *Config {
 		FilterIoU:           c.FilterIoU,
 		ServerPort:          c.ServerPort,
 		DataDir:             c.DataDir,
+		LLMApiKey:           c.LLMApiKey,
+		LLMBaseURL:          c.LLMBaseURL,
+		LLMModel:            c.LLMModel,
 	}
 }
 

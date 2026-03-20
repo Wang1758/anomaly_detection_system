@@ -49,6 +49,8 @@ export interface SystemConfig {
   source_addr: string;
   fps: number;
   workers: number;
+  batch_size: number;
+  batch_timeout_ms: number;
   filter_time_window: number;
   filter_iou: number;
   server_port: string;

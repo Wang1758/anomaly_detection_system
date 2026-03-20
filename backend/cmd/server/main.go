@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 
 	"anomaly_detection_system/backend/internal/config"
 	"anomaly_detection_system/backend/internal/db"
@@ -16,15 +15,6 @@ import (
 
 func main() {
 	cfg := config.Get()
-
-	// Runtime overrides from environment
-	aiServiceAddr := cfg.AIServiceAddr
-	serverPort := cfg.ServerPort
-	dataDir := cfg.DataDir
-
-	cfg.AIServiceAddr = aiServiceAddr
-	cfg.ServerPort = serverPort
-	cfg.DataDir = dataDir
 
 	// Init database
 	db.Init(cfg.DataDir)
@@ -39,8 +29,16 @@ func main() {
 	// Init pipeline
 	pipe := pipeline.New(cfg, grpcClient)
 
+	// Init LLM judger (uses env vars: LLM_API_KEY, LLM_BASE_URL, LLM_MODEL)
+	llmJudger := handler.NewLLMJudger(cfg.LLMApiKey, cfg.LLMBaseURL, cfg.LLMModel)
+	if llmJudger.Available() {
+		log.Printf("LLM AI Judge enabled (model=%s)", cfg.LLMModel)
+	} else {
+		log.Println("LLM API key not set — AI Judge will fall back to YOLO re-detection")
+	}
+
 	// Init handlers
-	apiHandler := handler.NewAPIHandler(cfg, pipe, grpcClient)
+	apiHandler := handler.NewAPIHandler(cfg, pipe, grpcClient, llmJudger)
 	streamHandler := handler.NewStreamHandler(pipe)
 	wsHub := handler.NewWSHub(pipe)
 
@@ -106,11 +104,4 @@ func main() {
 	if err := r.Run(cfg.ServerPort); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
-}
-
-func getEnv(key string, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

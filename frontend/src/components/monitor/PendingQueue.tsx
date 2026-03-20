@@ -1,14 +1,16 @@
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, Check, X, Bot } from 'lucide-react';
+import { AlertTriangle, Check, X, Bot, Loader2 } from 'lucide-react';
 import { CrystalButton } from '../ui/CrystalButton';
 import { useAppStore } from '../../stores/appStore';
 
 export function PendingQueue() {
   const { pendingAlerts, removeAlert, setLightboxAlert } = useAppStore();
+  const [judging, setJudging] = useState(false);
+  const [judgeStatus, setJudgeStatus] = useState<string | null>(null);
 
   const handleLabel = async (frameId: number, label: boolean) => {
     try {
-      // Find the sample ID from the backend
       const res = await fetch(`/api/samples?status=pending`);
       const samples = await res.json();
       const sample = samples.find((s: { frame_id: number }) => s.frame_id === frameId);
@@ -26,11 +28,25 @@ export function PendingQueue() {
   };
 
   const handleAIJudge = async () => {
+    setJudging(true);
+    setJudgeStatus(null);
     try {
-      await fetch('/api/samples/ai-judge', { method: 'POST' });
+      const res = await fetch('/api/samples/ai-judge', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setJudgeStatus(`研判失败: ${data.error || '未知错误'}`);
+        return;
+      }
+      const method = data.method === 'llm' ? 'AI 大模型' : 'YOLO 重检测';
+      const errors = (data.results || []).filter((r: { error?: string }) => r.error).length;
+      const successCount = (data.count || 0) - errors;
+      setJudgeStatus(`${method}完成: ${successCount} 成功${errors > 0 ? `, ${errors} 失败` : ''}`);
       useAppStore.getState().clearAlerts();
     } catch (e) {
       console.error('AI judge failed:', e);
+      setJudgeStatus('网络错误，请重试');
+    } finally {
+      setJudging(false);
     }
   };
 
@@ -111,17 +127,22 @@ export function PendingQueue() {
 
       {/* AI Judge Button */}
       {pendingAlerts.length > 0 && (
-        <div className="p-3 border-t border-white/20">
+        <div className="p-3 border-t border-white/20 space-y-2">
           <CrystalButton
             variant="primary"
             size="sm"
             className="w-full"
             onClick={handleAIJudge}
+            disabled={judging}
           >
             <span className="flex items-center justify-center gap-2">
-              <Bot size={16} /> AI 一键判断
+              {judging ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />}
+              {judging ? 'AI 研判中...' : 'AI 一键判断'}
             </span>
           </CrystalButton>
+          {judgeStatus && (
+            <p className="text-xs text-center text-gray-500">{judgeStatus}</p>
+          )}
         </div>
       )}
     </div>
