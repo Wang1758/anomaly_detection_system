@@ -9,6 +9,34 @@ import (
 	"gocv.io/x/gocv"
 )
 
+func ValidateSource(sourceType, sourceAddr string) error {
+	if sourceAddr == "" {
+		return fmt.Errorf("source address is empty")
+	}
+
+	var cap *gocv.VideoCapture
+	var err error
+
+	switch sourceType {
+	case "rtsp", "local":
+		cap, err = gocv.OpenVideoCapture(sourceAddr)
+	default:
+		return fmt.Errorf("unknown source type: %s", sourceType)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to open video source: %w", err)
+	}
+	defer cap.Close()
+
+	mat := gocv.NewMat()
+	defer mat.Close()
+	if ok := cap.Read(&mat); !ok || mat.Empty() {
+		return fmt.Errorf("video source is not readable: %s", sourceAddr)
+	}
+
+	return nil
+}
+
 // Producer reads frames from RTSP or local video via GoCV.
 type Producer struct {
 	sourceType string

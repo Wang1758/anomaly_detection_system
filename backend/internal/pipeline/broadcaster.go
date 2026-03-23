@@ -15,6 +15,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const mjpegSubscriberBufferSize = 16
+
 // Broadcaster consumes ordered results and fans out to video stream + alert channel.
 type Broadcaster struct {
 	// Latest MJPEG frame for streaming
@@ -52,7 +54,7 @@ func (b *Broadcaster) ResetForNewRun(f *filter.SpatiotemporalFilter, dataDir str
 
 // SubscribeMJPEG returns a channel that receives JPEG frames.
 func (b *Broadcaster) SubscribeMJPEG() chan []byte {
-	ch := make(chan []byte, 2)
+	ch := make(chan []byte, mjpegSubscriberBufferSize)
 	b.subMu.Lock()
 	b.subscribers[ch] = struct{}{}
 	b.subMu.Unlock()

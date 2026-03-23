@@ -38,17 +38,32 @@ export function TopControlBar() {
 
   const handleApply = async () => {
     try {
-      await fetch('/api/config', {
+      const cfgRes = await fetch('/api/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source_type: sourceType, source_addr: sourceAddr, fps }),
       });
-      setConfig({ ...config!, source_type: sourceType, source_addr: sourceAddr, fps });
+      if (!cfgRes.ok) {
+        const data = await cfgRes.json().catch(() => ({}));
+        window.alert(data?.error || '配置更新失败');
+        return;
+      }
+      if (config) {
+        setConfig({ ...config, source_type: sourceType, source_addr: sourceAddr, fps });
+      }
 
-      await fetch('/api/pipeline/start', { method: 'POST' });
+      const startRes = await fetch('/api/pipeline/start', { method: 'POST' });
+      if (!startRes.ok) {
+        const data = await startRes.json().catch(() => ({}));
+        window.alert(data?.error || '启动失败，请检查视频源地址');
+        await syncPipelineStatus();
+        return;
+      }
+
       await syncPipelineStatus();
     } catch (e) {
       console.error('Apply failed:', e);
+      window.alert('网络错误，启动失败');
     }
   };
 
@@ -123,27 +138,29 @@ export function TopControlBar() {
       {/* FPS toggle */}
       <div className="flex rounded-xl overflow-hidden border border-white/40">
         <button
+          onClick={() => handleFpsChange(15)}
+          className={`px-3.5 py-2 text-sm font-medium transition-all
+            ${fps === 15 ? 'bg-blue-500/15 text-blue-600' : 'text-gray-500 hover:bg-white/40'}`}
+        >
+          15 FPS
+        </button>
+        <button
           onClick={() => handleFpsChange(30)}
           className={`px-3.5 py-2 text-sm font-medium transition-all
             ${fps === 30 ? 'bg-blue-500/15 text-blue-600' : 'text-gray-500 hover:bg-white/40'}`}
         >
           30 FPS
         </button>
-        <button
-          onClick={() => handleFpsChange(60)}
-          className={`px-3.5 py-2 text-sm font-medium transition-all
-            ${fps === 60 ? 'bg-blue-500/15 text-blue-600' : 'text-gray-500 hover:bg-white/40'}`}
-        >
-          60 FPS
-        </button>
       </div>
 
       {/* Action buttons */}
-      <CrystalButton variant="primary" size="sm" onClick={handleApply}>
-        <span className="flex items-center gap-2">
-          <Play size={16} /> 启动
-        </span>
-      </CrystalButton>
+      {!pipelineRunning && (
+        <CrystalButton variant="primary" size="sm" onClick={handleApply}>
+          <span className="flex items-center gap-2">
+            <Play size={16} /> 启动
+          </span>
+        </CrystalButton>
+      )}
 
       {pipelineRunning && (
         <CrystalButton variant="danger" size="sm" onClick={handleStop}>

@@ -26,10 +26,10 @@ class DetectorParams:
     """Mutable detection parameters (updated via gRPC UpdateParams)."""
 
     def __init__(self):
-        self.nms_threshold: float = 0.45
-        self.confidence_threshold: float = 0.25
-        self.entropy_threshold: float = 0.5
-        self.w1: float = 0.6
+        self.nms_threshold: float = 0.9  # 非极大值抑制的IoU阈值
+        self.confidence_threshold: float = 0.25 # 置信度阈值，低于此值的会被直接过滤掉，
+        self.entropy_threshold: float = 0.75 # 熵阈值，异常评分高于此值被标记成不确定
+        self.w1: float = 0.6 # 异常评分，w1 * (1 - conf) + w2 * (1 - max_iou)
         self.w2: float = 0.4
 
 
@@ -129,8 +129,8 @@ class Detector:
         """Run detection on a single image."""
         model = self._mm.model
         if model is not None:
-            return self._real_detect(image, model)
-        return self._mock_detect(image)
+            return self._real_detect(image, model)  
+        return self._mock_detect(image) # 没有模型时，模拟运行
 
     def detect_batch(self, images: list[np.ndarray]) -> list[list[dict]]:
         """Batch inference — process multiple images in one GPU call.

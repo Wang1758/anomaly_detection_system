@@ -363,6 +363,26 @@ func (h *APIHandler) TrainingHistory(c *gin.Context) {
 // --- Pipeline control ---
 
 func (h *APIHandler) StartPipeline(c *gin.Context) {
+	snap := h.cfg.Read()
+	if snap.SourceType == "local" {
+		if strings.TrimSpace(snap.SourceAddr) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "本地视频路径不能为空"})
+			return
+		}
+		if _, err := os.Stat(snap.SourceAddr); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "本地视频不存在或不可访问"})
+			return
+		}
+	}
+	if snap.SourceType == "rtsp" && strings.TrimSpace(snap.SourceAddr) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "RTSP 地址不能为空"})
+		return
+	}
+	if err := pipeline.ValidateSource(snap.SourceType, snap.SourceAddr); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "视频源无效或不可读取，请检查本地路径/RTSP 地址"})
+		return
+	}
+
 	if err := h.pipe.Start(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
