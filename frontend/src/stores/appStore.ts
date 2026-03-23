@@ -6,6 +6,7 @@ interface AppState {
   setCurrentView: (view: ViewType) => void;
 
   pendingAlerts: AlertEvent[];
+  setPendingAlerts: (alerts: AlertEvent[]) => void;
   addAlert: (alert: AlertEvent) => void;
   removeAlert: (frameId: number) => void;
   clearAlerts: () => void;
@@ -31,8 +32,30 @@ export const useAppStore = create<AppState>((set) => ({
   setCurrentView: (view) => set({ currentView: view }),
 
   pendingAlerts: [],
+  setPendingAlerts: (alerts) => {
+    const deduped = alerts.reduce<AlertEvent[]>((acc, item) => {
+      const idx = acc.findIndex((a) => a.frame_id === item.frame_id);
+      if (idx >= 0) {
+        acc[idx] = item;
+      } else {
+        acc.push(item);
+      }
+      return acc;
+    }, []);
+    set({ pendingAlerts: deduped.slice(0, 50) });
+  },
   addAlert: (alert) =>
-    set((state) => ({ pendingAlerts: [alert, ...state.pendingAlerts].slice(0, 50) })),
+    set((state) => {
+      const existed = state.pendingAlerts.some((a) => a.frame_id === alert.frame_id);
+      if (existed) {
+        return {
+          pendingAlerts: state.pendingAlerts
+            .map((a) => (a.frame_id === alert.frame_id ? alert : a))
+            .slice(0, 50),
+        };
+      }
+      return { pendingAlerts: [alert, ...state.pendingAlerts].slice(0, 50) };
+    }),
   removeAlert: (frameId) =>
     set((state) => ({
       pendingAlerts: state.pendingAlerts.filter((a) => a.frame_id !== frameId),

@@ -65,6 +65,7 @@ func main() {
 
 		api.GET("/samples", apiHandler.ListSamples)
 		api.POST("/samples/:id/label", apiHandler.LabelSample)
+		api.POST("/samples/frame/:frameId/label", apiHandler.LabelSampleByFrame)
 		api.PATCH("/samples/:id/relabel", apiHandler.RelabelSample)
 		api.POST("/samples/ai-judge", apiHandler.AIJudge)
 

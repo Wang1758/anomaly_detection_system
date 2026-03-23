@@ -124,6 +124,39 @@ func (h *APIHandler) LabelSample(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "labeled"})
 }
 
+func (h *APIHandler) LabelSampleByFrame(c *gin.Context) {
+	frameIDStr := c.Param("frameId")
+	frameID, err := strconv.ParseInt(frameIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid frame id"})
+		return
+	}
+
+	var req struct {
+		Label bool `json:"label"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	result := db.DB.Model(&models.Sample{}).Where("frame_id = ?", frameID).Updates(map[string]interface{}{
+		"label":  req.Label,
+		"status": "labeled",
+		"source": "human",
+	})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "sample not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "labeled"})
+}
+
 func (h *APIHandler) RelabelSample(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 64)

@@ -1,29 +1,55 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, Check, X, Bot, Loader2 } from 'lucide-react';
 import { CrystalButton } from '../ui/CrystalButton';
 import { useAppStore } from '../../stores/appStore';
 
 export function PendingQueue() {
-  const { pendingAlerts, removeAlert, setLightboxAlert } = useAppStore();
+  const { pendingAlerts, setPendingAlerts, removeAlert, setLightboxAlert } = useAppStore();
   const [judging, setJudging] = useState(false);
   const [judgeStatus, setJudgeStatus] = useState<string | null>(null);
 
+  const hydratePending = useCallback(async () => {
+    try {
+      const res = await fetch('/api/samples?status=pending');
+      if (!res.ok) return;
+      const samples = await res.json();
+      if (!Array.isArray(samples)) return;
+
+      const alerts = samples.map((s: { id: number; frame_id: number; image_path: string; created_at: string }) => ({
+        type: 'alert' as const,
+        sample_id: s.id,
+        frame_id: s.frame_id,
+        image_url: `/api/images/${encodeURIComponent((s.image_path || '').split('/').pop() || '')}`,
+        detections: [],
+        timestamp: s.created_at,
+      }));
+      setPendingAlerts(alerts);
+    } catch (e) {
+      console.error('Load pending failed:', e);
+    }
+  }, [setPendingAlerts]);
+
+  useEffect(() => {
+    hydratePending();
+  }, [hydratePending]);
+
   const handleLabel = async (frameId: number, label: boolean) => {
     try {
-      const res = await fetch(`/api/samples?status=pending`);
-      const samples = await res.json();
-      const sample = samples.find((s: { frame_id: number }) => s.frame_id === frameId);
-      if (sample) {
-        await fetch(`/api/samples/${sample.id}/label`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ label }),
-        });
+      const res = await fetch(`/api/samples/frame/${frameId}/label`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setJudgeStatus(`标注失败: ${data?.error || '未知错误'}`);
+        return;
       }
       removeAlert(frameId);
     } catch (e) {
       console.error('Label failed:', e);
+      setJudgeStatus('标注失败: 网络错误');
     }
   };
 
@@ -68,7 +94,7 @@ export function PendingQueue() {
         <AnimatePresence mode="popLayout">
           {pendingAlerts.map((alert) => (
             <motion.div
-              key={alert.frame_id}
+              key={`${alert.frame_id}-${alert.timestamp}-${alert.image_url}`}
               layout
               initial={{ opacity: 0, x: 50, scale: 0.9 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}

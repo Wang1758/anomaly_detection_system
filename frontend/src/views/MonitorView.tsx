@@ -12,15 +12,15 @@ export function MonitorView() {
   const handleLightboxLabel = async (label: boolean) => {
     if (!lightboxAlert) return;
     try {
-      const res = await fetch(`/api/samples?status=pending`);
-      const samples = await res.json();
-      const sample = samples.find((s: { frame_id: number }) => s.frame_id === lightboxAlert.frame_id);
-      if (sample) {
-        await fetch(`/api/samples/${sample.id}/label`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ label }),
-        });
+      const res = await fetch(`/api/samples/frame/${lightboxAlert.frame_id}/label`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error('Label failed:', data?.error || 'unknown error');
+        return;
       }
       removeAlert(lightboxAlert.frame_id);
       setLightboxAlert(null);

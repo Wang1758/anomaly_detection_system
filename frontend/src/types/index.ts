@@ -13,6 +13,7 @@ export interface DetectionMeta {
 
 export interface AlertEvent {
   type: 'alert';
+  sample_id?: number;
   frame_id: number;
   image_url: string;
   detections: DetectionMeta[];
