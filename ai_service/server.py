@@ -31,6 +31,8 @@ MODEL_DIR = os.environ.get("MODEL_DIR", "models")
 DEFAULT_MODEL = "best.pt"
 GRPC_PORT = os.environ.get("GRPC_PORT", "50051")
 MAX_WORKERS = 4
+VIS_JPEG_QUALITY = int(os.environ.get("VIS_JPEG_QUALITY", "82"))
+ORIGINAL_JPEG_QUALITY = int(os.environ.get("ORIGINAL_JPEG_QUALITY", "90"))
 
 
 def _decode_image(img_bytes: bytes) -> np.ndarray | None:
@@ -45,12 +47,12 @@ def _build_detect_response(
 ) -> "detection_pb2.DetectResponse":
     """Shared helper to build a DetectResponse from detections."""
     vis_image = draw_detections(image, det_dicts)
-    vis_bytes = encode_jpeg(vis_image)
+    vis_bytes = encode_jpeg(vis_image, quality=VIS_JPEG_QUALITY)
 
     has_uncertain = any(d.get("is_uncertain", False) for d in det_dicts)
     original_bytes = b""
     if has_uncertain:
-        original_bytes = encode_jpeg(image, quality=95)
+        original_bytes = encode_jpeg(image, quality=ORIGINAL_JPEG_QUALITY)
 
     meta_list = []
     for d in det_dicts:

@@ -9,7 +9,7 @@ export function TopControlBar() {
   const { config, setConfig, pipelineRunning, setPipelineRunning } = useAppStore();
   const [sourceType, setSourceType] = useState<'rtsp' | 'local'>(config?.source_type || 'local');
   const [sourceAddr, setSourceAddr] = useState(config?.source_addr || DEFAULT_LOCAL_VIDEO);
-  const [fps, setFps] = useState(config?.fps || 30);
+  const [fps, setFps] = useState(config?.fps || 25);
 
   const syncPipelineStatus = useCallback(async () => {
     try {
@@ -36,6 +36,20 @@ export function TopControlBar() {
     return () => window.clearInterval(timer);
   }, [syncPipelineStatus]);
 
+  const restartPipeline = useCallback(async () => {
+    const stopRes = await fetch('/api/pipeline/stop', { method: 'POST' });
+    if (!stopRes.ok) {
+      const data = await stopRes.json().catch(() => ({}));
+      throw new Error(data?.error || '停止失败');
+    }
+
+    const startRes = await fetch('/api/pipeline/start', { method: 'POST' });
+    if (!startRes.ok) {
+      const data = await startRes.json().catch(() => ({}));
+      throw new Error(data?.error || '启动失败，请检查视频源地址');
+    }
+  }, []);
+
   const handleApply = async () => {
     try {
       const cfgRes = await fetch('/api/config', {
@@ -52,12 +66,16 @@ export function TopControlBar() {
         setConfig({ ...config, source_type: sourceType, source_addr: sourceAddr, fps });
       }
 
-      const startRes = await fetch('/api/pipeline/start', { method: 'POST' });
-      if (!startRes.ok) {
-        const data = await startRes.json().catch(() => ({}));
-        window.alert(data?.error || '启动失败，请检查视频源地址');
-        await syncPipelineStatus();
-        return;
+      if (pipelineRunning) {
+        await restartPipeline();
+      } else {
+        const startRes = await fetch('/api/pipeline/start', { method: 'POST' });
+        if (!startRes.ok) {
+          const data = await startRes.json().catch(() => ({}));
+          window.alert(data?.error || '启动失败，请检查视频源地址');
+          await syncPipelineStatus();
+          return;
+        }
       }
 
       await syncPipelineStatus();
@@ -82,8 +100,14 @@ export function TopControlBar() {
       if (config) {
         setConfig({ ...config, fps: nextFps });
       }
+
+      if (pipelineRunning) {
+        await restartPipeline();
+        await syncPipelineStatus();
+      }
     } catch (e) {
       console.error('FPS apply failed:', e);
+      window.alert('FPS 修改未生效，请重试');
     }
   };
 
@@ -145,11 +169,11 @@ export function TopControlBar() {
           15 FPS
         </button>
         <button
-          onClick={() => handleFpsChange(30)}
+          onClick={() => handleFpsChange(25)}
           className={`px-3.5 py-2 text-sm font-medium transition-all
-            ${fps === 30 ? 'bg-blue-500/15 text-blue-600' : 'text-gray-500 hover:bg-white/40'}`}
+            ${fps === 25 ? 'bg-blue-500/15 text-blue-600' : 'text-gray-500 hover:bg-white/40'}`}
         >
-          30 FPS
+          25 FPS
         </button>
       </div>
 

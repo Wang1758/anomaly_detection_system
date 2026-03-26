@@ -60,9 +60,24 @@ func (p *Producer) Run(ctx context.Context, pool *OrderedPool) error {
 
 // RunCh sends frames to a plain channel (used by BatchProcessor pipeline).
 func (p *Producer) RunCh(ctx context.Context, ch chan<- *Task) error {
+	var dropped int64
+	var acceptedSeq int64
+	lastDropLog := time.Now()
 	return p.run(ctx, func(task *Task) bool {
+		if ctx.Err() != nil {
+			return false
+		}
+		enqueuedTask := &Task{SeqNo: acceptedSeq, ImageBytes: task.ImageBytes}
 		select {
-		case ch <- task:
+		case ch <- enqueuedTask:
+			acceptedSeq++
+			return true
+		default:
+			dropped++
+			if time.Since(lastDropLog) >= time.Second {
+				log.Printf("Producer drop frames under pressure: dropped=%d accepted_seq=%d", dropped, acceptedSeq)
+				lastDropLog = time.Now()
+			}
 			return true
 		case <-ctx.Done():
 			return false

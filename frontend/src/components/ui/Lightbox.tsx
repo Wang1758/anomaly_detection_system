@@ -29,7 +29,7 @@ export function Lightbox({ open, onClose, children }: LightboxProps) {
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.9, opacity: 0 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative z-10 max-w-3xl w-full mx-4"
+            className="relative z-10 w-[96vw] max-w-[1800px] max-h-[94vh] mx-4"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -39,7 +39,7 @@ export function Lightbox({ open, onClose, children }: LightboxProps) {
             >
               <X size={16} />
             </button>
-            <div className="glass rounded-3xl p-6 glow-border">
+            <div className="glass rounded-3xl p-6 glow-border max-h-[94vh] overflow-auto">
               {children}
             </div>
           </motion.div>

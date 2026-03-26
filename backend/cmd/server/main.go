@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 
@@ -25,6 +26,17 @@ func main() {
 		log.Fatalf("Failed to connect to AI service: %v", err)
 	}
 	defer grpcClient.Close()
+
+	if _, err := grpcClient.UpdateParams(
+		context.Background(),
+		cfg.NMSThreshold,
+		cfg.ConfidenceThreshold,
+		cfg.EntropyThreshold,
+		cfg.W1,
+		cfg.W2,
+	); err != nil {
+		log.Printf("Failed to sync initial params to AI service: %v", err)
+	}
 
 	// Init pipeline
 	pipe := pipeline.New(cfg, grpcClient)

@@ -429,7 +429,16 @@ func (h *APIHandler) StopPipeline(c *gin.Context) {
 }
 
 func (h *APIHandler) PipelineStatus(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"running": h.pipe.IsRunning()})
+	snap := h.cfg.Read()
+	actualFPS := 0.0
+	if bc := h.pipe.GetBroadcaster(); bc != nil {
+		actualFPS = bc.GetOutputFPS()
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"running":    h.pipe.IsRunning(),
+		"fps":        actualFPS,
+		"target_fps": snap.FPS,
+	})
 }
 
 // --- Image serving ---

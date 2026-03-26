@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, Check, X, Bot, Loader2 } from 'lucide-react';
 import { CrystalButton } from '../ui/CrystalButton';
 import { useAppStore } from '../../stores/appStore';
+import type { AlertEvent } from '../../types';
 
 export function PendingQueue() {
   const { pendingAlerts, setPendingAlerts, removeAlert, setLightboxAlert } = useAppStore();
@@ -16,14 +17,34 @@ export function PendingQueue() {
       const samples = await res.json();
       if (!Array.isArray(samples)) return;
 
-      const alerts = samples.map((s: { id: number; frame_id: number; image_path: string; created_at: string }) => ({
-        type: 'alert' as const,
-        sample_id: s.id,
-        frame_id: s.frame_id,
-        image_url: `/api/images/${encodeURIComponent((s.image_path || '').split('/').pop() || '')}`,
-        detections: [],
-        timestamp: s.created_at,
-      }));
+      const alerts: AlertEvent[] = samples
+        .map((s: {
+          id: number;
+          frame_id: number;
+          image_path: string;
+          visualized_image_path?: string;
+          uncertain_count?: number;
+          created_at: string;
+        }): AlertEvent | null => {
+          const fileName = (s.visualized_image_path || `vis_frame_${s.frame_id}.jpg` || '')
+            .split('/')
+            .pop() || '';
+          const fallbackName = (s.image_path || '').split('/').pop() || '';
+          if (!fileName) return null;
+          return {
+            type: 'alert' as const,
+            sample_id: s.id,
+            frame_id: s.frame_id,
+            image_url: `/api/images/${encodeURIComponent(fileName)}`,
+            fallback_image_url: fallbackName
+              ? `/api/images/${encodeURIComponent(fallbackName)}`
+              : undefined,
+            detections: [],
+            uncertain_count: s.uncertain_count ?? 0,
+            timestamp: s.created_at,
+          };
+        })
+        .filter((item): item is AlertEvent => item !== null);
       setPendingAlerts(alerts);
     } catch (e) {
       console.error('Load pending failed:', e);
@@ -111,10 +132,18 @@ export function PendingQueue() {
                   src={alert.image_url}
                   alt={`Frame ${alert.frame_id}`}
                   className="w-full h-32 object-cover"
+                  onError={(e) => {
+                    if (!alert.fallback_image_url) return;
+                    const target = e.currentTarget;
+                    if (target.src.endsWith(alert.fallback_image_url)) return;
+                    target.src = alert.fallback_image_url;
+                  }}
                 />
                 <div className="absolute top-1 right-1 bg-red-500/80 text-white text-xs
                   px-2 py-0.5 rounded-md font-medium">
-                  {alert.detections.filter((d) => d.is_uncertain).length} 异常
+                  {alert.detections.length > 0
+                    ? alert.detections.filter((d) => d.is_uncertain).length
+                    : (alert.uncertain_count ?? 0)} 异常
                 </div>
               </div>
 

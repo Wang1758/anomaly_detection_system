@@ -3,14 +3,16 @@ package models
 import "time"
 
 type Sample struct {
-	ID        uint   `gorm:"primaryKey" json:"id"`
-	FrameID   int64  `gorm:"uniqueIndex" json:"frame_id"`
-	ImagePath string `json:"image_path"`
-	Status    string `gorm:"default:pending" json:"status"` // pending | labeled | trained
-	Label     *bool  `json:"label"`                         // true=positive, false=negative, nil=unlabeled
-	Source    string `json:"source"`                        // "human" | "ai_agent"
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                  uint      `gorm:"primaryKey" json:"id"`
+	FrameID             int64     `gorm:"uniqueIndex" json:"frame_id"`
+	ImagePath           string    `json:"image_path"`
+	VisualizedImagePath string    `json:"visualized_image_path"`
+	UncertainCount      int       `gorm:"default:0" json:"uncertain_count"`
+	Status              string    `gorm:"default:pending" json:"status"` // pending | labeled | trained
+	Label               *bool     `json:"label"`                         // true=positive, false=negative, nil=unlabeled
+	Source              string    `json:"source"`                        // "human" | "ai_agent"
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type TrainingRun struct {
@@ -22,15 +24,15 @@ type TrainingRun struct {
 }
 
 type DetectionMeta struct {
-	X1          float32 `json:"x1"`
-	Y1          float32 `json:"y1"`
-	X2          float32 `json:"x2"`
-	Y2          float32 `json:"y2"`
-	Confidence  float32 `json:"confidence"`
-	ClassID     int32   `json:"class_id"`
-	ClassName   string  `json:"class_name"`
-	IsUncertain bool    `json:"is_uncertain"`
-	Entropy     float32 `json:"entropy"`
+	X1           float32 `json:"x1"`
+	Y1           float32 `json:"y1"`
+	X2           float32 `json:"x2"`
+	Y2           float32 `json:"y2"`
+	Confidence   float32 `json:"confidence"`
+	ClassID      int32   `json:"class_id"`
+	ClassName    string  `json:"class_name"`
+	IsUncertain  bool    `json:"is_uncertain"`
+	Entropy      float32 `json:"entropy"`
 	AnomalyScore float32 `json:"anomaly_score"`
 }
 

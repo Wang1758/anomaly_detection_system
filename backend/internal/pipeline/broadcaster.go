@@ -22,31 +22,49 @@ type Broadcaster struct {
 	// Latest MJPEG frame for streaming
 	mu          sync.RWMutex
 	latestFrame []byte
+	outputFPS   float64
+	fpsWindowAt time.Time
+	fpsFrames   int
 
 	// Subscribers for MJPEG streaming
 	subMu       sync.RWMutex
 	subscribers map[chan []byte]struct{}
 
 	// Alert channel for WebSocket push
-	AlertCh chan *models.AlertEvent
+	AlertCh     chan *models.AlertEvent
+	alertWorkCh chan alertWork
 
 	filter  *filter.SpatiotemporalFilter
 	dataDir string
 }
 
+type alertWork struct {
+	frameID    int64
+	visFrame   []byte
+	original   []byte
+	detections []models.DetectionMeta
+	timestamp  string
+}
+
 func NewBroadcaster(f *filter.SpatiotemporalFilter, dataDir string) *Broadcaster {
-	return &Broadcaster{
+	b := &Broadcaster{
 		subscribers: make(map[chan []byte]struct{}),
 		AlertCh:     make(chan *models.AlertEvent, 64),
+		alertWorkCh: make(chan alertWork, 128),
 		filter:      f,
 		dataDir:     dataDir,
 	}
+	go b.alertWorker()
+	return b
 }
 
 // ResetForNewRun clears stale frame and updates run-scoped settings.
 func (b *Broadcaster) ResetForNewRun(f *filter.SpatiotemporalFilter, dataDir string) {
 	b.mu.Lock()
 	b.latestFrame = nil
+	b.outputFPS = 0
+	b.fpsWindowAt = time.Time{}
+	b.fpsFrames = 0
 	b.filter = f
 	b.dataDir = dataDir
 	b.mu.Unlock()
@@ -76,6 +94,12 @@ func (b *Broadcaster) GetLatestFrame() []byte {
 	return b.latestFrame
 }
 
+func (b *Broadcaster) GetOutputFPS() float64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.outputFPS
+}
+
 // HandleResult processes a single ordered result from the pool.
 func (b *Broadcaster) HandleResult(r *OrderedResult) {
 	if r.Err != nil || r.Result == nil {
@@ -90,6 +114,16 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 	// Update latest frame and broadcast to MJPEG subscribers
 	b.mu.Lock()
 	b.latestFrame = visFrame
+	now := time.Now()
+	if b.fpsWindowAt.IsZero() {
+		b.fpsWindowAt = now
+	}
+	b.fpsFrames++
+	if elapsed := now.Sub(b.fpsWindowAt); elapsed >= time.Second {
+		b.outputFPS = float64(b.fpsFrames) / elapsed.Seconds()
+		b.fpsFrames = 0
+		b.fpsWindowAt = now
+	}
 	b.mu.Unlock()
 
 	b.subMu.RLock()
@@ -129,48 +163,71 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 		return
 	}
 
-	imgDir := filepath.Join(b.dataDir, "images")
-	os.MkdirAll(imgDir, 0755)
+	work := alertWork{
+		frameID:    r.Result.FrameId,
+		visFrame:   append([]byte(nil), visFrame...),
+		original:   append([]byte(nil), r.Result.OriginalImage...),
+		detections: uncertainDets,
+		timestamp:  time.Now().Format(time.RFC3339),
+	}
 
-	// Save original (clean) image for training data
-	origName := fmt.Sprintf("frame_%d.jpg", r.Result.FrameId)
+	select {
+	case b.alertWorkCh <- work:
+	default:
+		log.Printf("Alert work queue full, dropping alert persistence for frame=%d", r.Result.FrameId)
+	}
+}
+
+func (b *Broadcaster) alertWorker() {
+	for work := range b.alertWorkCh {
+		b.persistAlert(work)
+	}
+}
+
+func (b *Broadcaster) persistAlert(work alertWork) {
+	imgDir := filepath.Join(b.dataDir, "images")
+	if err := os.MkdirAll(imgDir, 0755); err != nil {
+		log.Printf("Failed to create image dir: %v", err)
+		return
+	}
+
+	origName := fmt.Sprintf("frame_%d.jpg", work.frameID)
 	origPath := filepath.Join(imgDir, origName)
-	if len(r.Result.OriginalImage) > 0 {
-		if err := os.WriteFile(origPath, r.Result.OriginalImage, 0644); err != nil {
+	if len(work.original) > 0 {
+		if err := os.WriteFile(origPath, work.original, 0644); err != nil {
 			log.Printf("Failed to save original image: %v", err)
 			return
 		}
 	}
 
-	// Save visualized image (with annotated boxes) for alert display
-	visName := fmt.Sprintf("vis_frame_%d.jpg", r.Result.FrameId)
+	visName := fmt.Sprintf("vis_frame_%d.jpg", work.frameID)
 	visPath := filepath.Join(imgDir, visName)
-	if len(visFrame) > 0 {
-		if err := os.WriteFile(visPath, visFrame, 0644); err != nil {
+	if len(work.visFrame) > 0 {
+		if err := os.WriteFile(visPath, work.visFrame, 0644); err != nil {
 			log.Printf("Failed to save visualized image: %v", err)
 		}
 	}
 
-	// Save to database (basename only; full file lives under dataDir/images)
 	sample := models.Sample{
-		FrameID:   r.Result.FrameId,
-		ImagePath: origName,
-		Status:    "pending",
+		FrameID:             work.frameID,
+		ImagePath:           origName,
+		VisualizedImagePath: visName,
+		UncertainCount:      len(work.detections),
+		Status:              "pending",
 	}
 	if err := db.DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "frame_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"image_path", "status", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"image_path", "visualized_image_path", "uncertain_count", "status", "updated_at"}),
 	}).Create(&sample).Error; err != nil {
 		log.Printf("Failed to save sample: %v", err)
 	}
 
-	// Push alert event with the annotated visualization for the frontend
 	event := &models.AlertEvent{
 		Type:       "alert",
-		FrameID:    r.Result.FrameId,
+		FrameID:    work.frameID,
 		ImageURL:   fmt.Sprintf("/api/images/%s", visName),
-		Detections: uncertainDets,
-		Timestamp:  time.Now().Format(time.RFC3339),
+		Detections: work.detections,
+		Timestamp:  work.timestamp,
 	}
 
 	select {

@@ -16,7 +16,9 @@ export interface AlertEvent {
   sample_id?: number;
   frame_id: number;
   image_url: string;
+  fallback_image_url?: string;
   detections: DetectionMeta[];
+  uncertain_count?: number;
   timestamp: string;
 }
 
@@ -24,6 +26,8 @@ export interface Sample {
   id: number;
   frame_id: number;
   image_path: string;
+  visualized_image_path?: string;
+  uncertain_count?: number;
   status: 'pending' | 'labeled' | 'trained';
   label: boolean | null;
   source: string;

@@ -65,9 +65,10 @@ func (p *Pipeline) Start() error {
 
 	producer := NewProducer(snap.SourceType, snap.SourceAddr, snap.FPS)
 
-	frameCh := make(chan *Task, snap.BatchSize*2)
-	resultCh := make(chan *OrderedResult, snap.BatchSize*2)
-	batchProc := NewBatchProcessor(p.grpcClient, snap.BatchSize, snap.BatchTimeout)
+	bufSize := 1000
+	frameCh := make(chan *Task, bufSize)
+	resultCh := make(chan *OrderedResult, bufSize)
+	batchProc := NewBatchProcessor(p.grpcClient, snap.BatchSize, snap.BatchTimeout, snap.Workers)
 
 	// Producer goroutine: reads frames and sends to frameCh
 	go func() {
@@ -100,8 +101,8 @@ func (p *Pipeline) Start() error {
 	}()
 
 	p.running = true
-	log.Printf("Pipeline started (batch_size=%d, batch_timeout=%dms)",
-		snap.BatchSize, snap.BatchTimeout)
+	log.Printf("Pipeline started (batch_size=%d, batch_timeout=%dms, workers=%d)",
+		snap.BatchSize, snap.BatchTimeout, snap.Workers)
 	return nil
 }
 
