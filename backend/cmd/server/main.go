@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"net/http"
 
@@ -9,12 +10,20 @@ import (
 	"anomaly_detection_system/backend/internal/db"
 	"anomaly_detection_system/backend/internal/grpcclient"
 	"anomaly_detection_system/backend/internal/handler"
+	"anomaly_detection_system/backend/internal/perf"
 	"anomaly_detection_system/backend/internal/pipeline"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	perfLog := flag.Bool("perf-log", false, "enable performance logs")
+	flag.Parse()
+	perf.SetEnabled(*perfLog)
+	if *perfLog {
+		log.Println("Performance logging enabled")
+	}
+
 	cfg := config.Get()
 
 	// Init database

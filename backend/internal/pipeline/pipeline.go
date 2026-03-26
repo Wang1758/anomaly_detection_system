@@ -57,9 +57,9 @@ func (p *Pipeline) Start() error {
 
 	f := filter.NewSpatiotemporalFilter(snap.FilterTimeWindow, snap.FilterIoU)
 	if p.broadcaster == nil {
-		p.broadcaster = NewBroadcaster(f, snap.DataDir)
+		p.broadcaster = NewBroadcaster(f, snap.DataDir, snap.FPS)
 	} else {
-		p.broadcaster.ResetForNewRun(f, snap.DataDir)
+		p.broadcaster.ResetForNewRun(f, snap.DataDir, snap.FPS)
 	}
 	broadcaster := p.broadcaster
 

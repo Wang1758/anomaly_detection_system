@@ -11,6 +11,7 @@ import (
 	"anomaly_detection_system/backend/internal/db"
 	"anomaly_detection_system/backend/internal/filter"
 	"anomaly_detection_system/backend/internal/models"
+	"anomaly_detection_system/backend/internal/perf"
 
 	"gorm.io/gorm/clause"
 )
@@ -23,8 +24,13 @@ type Broadcaster struct {
 	mu          sync.RWMutex
 	latestFrame []byte
 	outputFPS   float64
+	targetFPS   int
+	lastEmitAt  time.Time
 	fpsWindowAt time.Time
 	fpsFrames   int
+	frameBytes  int64
+	fanoutDrops int64
+	alertQueued int64
 
 	// Subscribers for MJPEG streaming
 	subMu       sync.RWMutex
@@ -46,23 +52,26 @@ type alertWork struct {
 	timestamp  string
 }
 
-func NewBroadcaster(f *filter.SpatiotemporalFilter, dataDir string) *Broadcaster {
+func NewBroadcaster(f *filter.SpatiotemporalFilter, dataDir string, targetFPS int) *Broadcaster {
 	b := &Broadcaster{
 		subscribers: make(map[chan []byte]struct{}),
 		AlertCh:     make(chan *models.AlertEvent, 64),
 		alertWorkCh: make(chan alertWork, 128),
 		filter:      f,
 		dataDir:     dataDir,
+		targetFPS:   targetFPS,
 	}
 	go b.alertWorker()
 	return b
 }
 
 // ResetForNewRun clears stale frame and updates run-scoped settings.
-func (b *Broadcaster) ResetForNewRun(f *filter.SpatiotemporalFilter, dataDir string) {
+func (b *Broadcaster) ResetForNewRun(f *filter.SpatiotemporalFilter, dataDir string, targetFPS int) {
 	b.mu.Lock()
 	b.latestFrame = nil
 	b.outputFPS = 0
+	b.targetFPS = targetFPS
+	b.lastEmitAt = time.Time{}
 	b.fpsWindowAt = time.Time{}
 	b.fpsFrames = 0
 	b.filter = f
@@ -112,19 +121,44 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 	}
 
 	// Update latest frame and broadcast to MJPEG subscribers
-	b.mu.Lock()
-	b.latestFrame = visFrame
 	now := time.Now()
+	emit := true
+	b.mu.Lock()
+	if b.targetFPS > 0 {
+		minInterval := time.Second / time.Duration(b.targetFPS)
+		if !b.lastEmitAt.IsZero() && now.Sub(b.lastEmitAt) < minInterval {
+			emit = false
+		}
+	}
+	if emit {
+		b.latestFrame = visFrame
+		b.lastEmitAt = now
+	}
+	b.frameBytes += int64(len(visFrame))
 	if b.fpsWindowAt.IsZero() {
 		b.fpsWindowAt = now
 	}
-	b.fpsFrames++
+	if emit {
+		b.fpsFrames++
+	}
 	if elapsed := now.Sub(b.fpsWindowAt); elapsed >= time.Second {
 		b.outputFPS = float64(b.fpsFrames) / elapsed.Seconds()
+		if perf.Enabled() {
+			mbps := (float64(b.frameBytes) / 1024.0 / 1024.0) / elapsed.Seconds()
+			subscribers := b.subscriberCount()
+			perf.Logf("Broadcaster perf: output_fps=%.1f bytes=%.2fMB/s subscribers=%d alert_q=%d fanout_drops=%d",
+				b.outputFPS, mbps, subscribers, len(b.alertWorkCh), b.fanoutDrops)
+		}
 		b.fpsFrames = 0
 		b.fpsWindowAt = now
+		b.frameBytes = 0
+		b.fanoutDrops = 0
 	}
 	b.mu.Unlock()
+
+	if !emit {
+		return
+	}
 
 	b.subMu.RLock()
 	for ch := range b.subscribers {
@@ -132,6 +166,11 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 		case ch <- visFrame:
 		default:
 			// Drop frame if subscriber is slow
+			if perf.Enabled() {
+				b.mu.Lock()
+				b.fanoutDrops++
+				b.mu.Unlock()
+			}
 		}
 	}
 	b.subMu.RUnlock()
@@ -173,9 +212,20 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 
 	select {
 	case b.alertWorkCh <- work:
+		if perf.Enabled() {
+			b.mu.Lock()
+			b.alertQueued++
+			b.mu.Unlock()
+		}
 	default:
 		log.Printf("Alert work queue full, dropping alert persistence for frame=%d", r.Result.FrameId)
 	}
+}
+
+func (b *Broadcaster) subscriberCount() int {
+	b.subMu.RLock()
+	defer b.subMu.RUnlock()
+	return len(b.subscribers)
 }
 
 func (b *Broadcaster) alertWorker() {
@@ -185,6 +235,7 @@ func (b *Broadcaster) alertWorker() {
 }
 
 func (b *Broadcaster) persistAlert(work alertWork) {
+	start := time.Now()
 	imgDir := filepath.Join(b.dataDir, "images")
 	if err := os.MkdirAll(imgDir, 0755); err != nil {
 		log.Printf("Failed to create image dir: %v", err)
@@ -220,6 +271,11 @@ func (b *Broadcaster) persistAlert(work alertWork) {
 		DoUpdates: clause.AssignmentColumns([]string{"image_path", "visualized_image_path", "uncertain_count", "status", "updated_at"}),
 	}).Create(&sample).Error; err != nil {
 		log.Printf("Failed to save sample: %v", err)
+	}
+	if perf.Enabled() {
+		if latency := time.Since(start); latency > 80*time.Millisecond {
+			perf.Logf("Alert persist slow: frame=%d dets=%d latency=%s", work.frameID, len(work.detections), latency)
+		}
 	}
 
 	event := &models.AlertEvent{

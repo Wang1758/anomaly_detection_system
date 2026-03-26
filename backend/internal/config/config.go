@@ -100,7 +100,7 @@ func Default() *Config {
 		FPS:                 25,
 		Workers:             4,
 		BatchSize:           4,
-		BatchTimeout:        80,
+		BatchTimeout:        100,
 		FilterTimeWindow:    60.0,
 		FilterIoU:           0.5,
 		ServerPort:          ":8080",

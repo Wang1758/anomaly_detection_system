@@ -12,6 +12,7 @@ import math
 import random
 import logging
 import threading
+import time
 import numpy as np
 import cv2
 import torch
@@ -125,14 +126,19 @@ class Detector:
         self.params = params or DetectorParams()
         self._infer_lock = threading.Lock()
 
-    def detect(self, image: np.ndarray) -> list[dict]:
-        """Run detection on a single image."""
+    def detect(self, image: np.ndarray) -> tuple[list[dict], float]:
+        """Run detection on a single image.
+
+        Returns:
+            (detections, infer_ms)
+            infer_ms is pure YOLO model.predict latency in milliseconds.
+        """
         model = self._mm.model
         if model is not None:
-            return self._real_detect(image, model)  
-        return self._mock_detect(image) # 没有模型时，模拟运行
+            return self._real_detect(image, model)
+        return self._mock_detect(image), 0.0  # 没有模型时，模拟运行
 
-    def detect_batch(self, images: list[np.ndarray]) -> list[list[dict]]:
+    def detect_batch(self, images: list[np.ndarray]) -> tuple[list[list[dict]], float]:
         """Batch inference — process multiple images in one GPU call.
 
         This is the #1 performance optimization ported from the 乌骨鸡 project.
@@ -144,11 +150,12 @@ class Detector:
         model = self._mm.model
         if model is not None:
             return self._real_detect_batch(images, model)
-        return [self._mock_detect(img) for img in images]
+        return [self._mock_detect(img) for img in images], 0.0
 
-    def _real_detect(self, image: np.ndarray, model) -> list[dict]:
+    def _real_detect(self, image: np.ndarray, model) -> tuple[list[dict], float]:
         """Single-frame inference (kept for backward compatibility)."""
         with self._infer_lock:
+            infer_start = time.perf_counter()
             results = model.predict(
                 source=image,
                 conf=self.params.confidence_threshold,
@@ -158,18 +165,20 @@ class Detector:
                 imgsz=INFER_IMGSZ,
                 verbose=False,
             )
+            infer_ms = (time.perf_counter() - infer_start) * 1000.0
 
         if not results or len(results) == 0:
-            return []
+            return [], infer_ms
 
         detections = _extract_detections_vectorized(results[0])
         detections = apply_strict_nms(detections)
         self._add_entropy_and_uncertainty(detections)
-        return detections
+        return detections, infer_ms
 
-    def _real_detect_batch(self, images: list[np.ndarray], model) -> list[list[dict]]:
+    def _real_detect_batch(self, images: list[np.ndarray], model) -> tuple[list[list[dict]], float]:
         """Batch inference — mirrors 乌骨鸡 project's predict(source=image_list) pattern."""
         with self._infer_lock:
+            infer_start = time.perf_counter()
             results_batch = model.predict(
                 source=images,
                 conf=self.params.confidence_threshold,
@@ -179,6 +188,7 @@ class Detector:
                 imgsz=INFER_IMGSZ,
                 verbose=False,
             )
+            infer_ms = (time.perf_counter() - infer_start) * 1000.0
 
         all_detections: list[list[dict]] = []
         for result in results_batch:
@@ -187,7 +197,7 @@ class Detector:
             self._add_entropy_and_uncertainty(detections)
             all_detections.append(detections)
 
-        return all_detections
+        return all_detections, infer_ms
 
     def _mock_detect(self, image: np.ndarray) -> list[dict]:
         """Generate random mock detections for testing without a model."""

@@ -7,7 +7,9 @@ significantly higher GPU throughput.
 
 import os
 import sys
+import argparse
 import logging
+import time
 from concurrent import futures
 
 import grpc
@@ -33,18 +35,36 @@ GRPC_PORT = os.environ.get("GRPC_PORT", "50051")
 MAX_WORKERS = 4
 VIS_JPEG_QUALITY = int(os.environ.get("VIS_JPEG_QUALITY", "82"))
 ORIGINAL_JPEG_QUALITY = int(os.environ.get("ORIGINAL_JPEG_QUALITY", "90"))
+MODEL_INPUT_WIDTH = int(os.environ.get("MODEL_INPUT_WIDTH", "640"))
+MODEL_INPUT_HEIGHT = int(os.environ.get("MODEL_INPUT_HEIGHT", "640"))
+MODEL_INPUT_CHANNELS = 3
+RAW_IMAGE_BYTES = MODEL_INPUT_WIDTH * MODEL_INPUT_HEIGHT * MODEL_INPUT_CHANNELS
+PERF_LOG_ENABLED = False
 
 
 def _decode_image(img_bytes: bytes) -> np.ndarray | None:
+    # Fast path: Go side sends fixed-shape raw RGB tensor bytes.
+    if len(img_bytes) == RAW_IMAGE_BYTES:
+        rgb = np.frombuffer(img_bytes, dtype=np.uint8).reshape(
+            MODEL_INPUT_HEIGHT, MODEL_INPUT_WIDTH, MODEL_INPUT_CHANNELS
+        )
+        return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+
+    # Backward-compatible fallback: JPEG encoded bytes.
     arr = np.frombuffer(img_bytes, dtype=np.uint8)
     return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+
+def _perf_log(msg: str, *args):
+    if PERF_LOG_ENABLED:
+        logger.info(msg, *args)
 
 
 def _build_detect_response(
     image: np.ndarray,
     det_dicts: list[dict],
     frame_id: int,
-) -> "detection_pb2.DetectResponse":
+) -> tuple["detection_pb2.DetectResponse", float]:
     """Shared helper to build a DetectResponse from detections."""
     vis_image = draw_detections(image, det_dicts)
     vis_bytes = encode_jpeg(vis_image, quality=VIS_JPEG_QUALITY)
@@ -54,6 +74,7 @@ def _build_detect_response(
     if has_uncertain:
         original_bytes = encode_jpeg(image, quality=ORIGINAL_JPEG_QUALITY)
 
+    serialize_start = time.perf_counter()
     meta_list = []
     for d in det_dicts:
         meta_list.append(detection_pb2.DetectionMeta(
@@ -65,14 +86,16 @@ def _build_detect_response(
             entropy=d.get("entropy", 0.0),
             anomaly_score=d.get("anomaly_score", 0.0),
         ))
+    coords_serialize_ms = (time.perf_counter() - serialize_start) * 1000.0
 
-    return detection_pb2.DetectResponse(
+    response = detection_pb2.DetectResponse(
         visualized_image=vis_bytes,
         original_image=original_bytes,
         detections=meta_list,
         has_uncertain=has_uncertain,
         frame_id=frame_id,
     )
+    return response, coords_serialize_ms
 
 
 class DetectionServicer(detection_pb2_grpc.DetectionServiceServicer):
@@ -84,14 +107,30 @@ class DetectionServicer(detection_pb2_grpc.DetectionServiceServicer):
         self._detector = Detector(self._mm, self._params)
 
     def Detect(self, request, context):
+        req_start = time.perf_counter()
+        payload_mode = "raw_rgb" if len(request.image) == RAW_IMAGE_BYTES else "jpeg"
+        decode_start = time.perf_counter()
         image = _decode_image(request.image)
+        decode_ms = (time.perf_counter() - decode_start) * 1000.0
         if image is None:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("Failed to decode image")
             return detection_pb2.DetectResponse()
 
-        detections = self._detector.detect(image)
-        return _build_detect_response(image, detections, request.frame_id)
+        detections, infer_ms = self._detector.detect(image)
+        response, coords_pack_ms = _build_detect_response(image, detections, request.frame_id)
+        total_ms = (time.perf_counter() - req_start) * 1000.0
+        _perf_log(
+            "Detect perf frame_id=%d mode=%s decode_ms=%.2f infer_ms=%.2f coords_pack_ms=%.2f total_ms=%.2f det_count=%d",
+            request.frame_id,
+            payload_mode,
+            decode_ms,
+            infer_ms,
+            coords_pack_ms,
+            total_ms,
+            len(detections),
+        )
+        return response
 
     def BatchDetect(self, request, context):
         """Batch inference — processes N frames in one GPU call.
@@ -100,11 +139,21 @@ class DetectionServicer(detection_pb2_grpc.DetectionServiceServicer):
           results = model.predict(source=image_list, ...)
         GPU batching yields 3-5x throughput vs sequential single-frame calls.
         """
+        req_start = time.perf_counter()
         images = []
         frame_ids = list(request.frame_ids)
+        decode_ms_total = 0.0
+        raw_count = 0
+        jpeg_count = 0
 
         for i, img_bytes in enumerate(request.images):
+            if len(img_bytes) == RAW_IMAGE_BYTES:
+                raw_count += 1
+            else:
+                jpeg_count += 1
+            decode_start = time.perf_counter()
             image = _decode_image(img_bytes)
+            decode_ms_total += (time.perf_counter() - decode_start) * 1000.0
             if image is None:
                 logger.warning("BatchDetect: failed to decode image at index %d", i)
                 images.append(np.zeros((640, 640, 3), dtype=np.uint8))
@@ -114,12 +163,32 @@ class DetectionServicer(detection_pb2_grpc.DetectionServiceServicer):
         if not images:
             return detection_pb2.BatchDetectResponse()
 
-        all_detections = self._detector.detect_batch(images)
+        all_detections, infer_ms = self._detector.detect_batch(images)
 
         results = []
+        coords_pack_ms_total = 0.0
         for i, (image, dets) in enumerate(zip(images, all_detections)):
             fid = frame_ids[i] if i < len(frame_ids) else 0
-            results.append(_build_detect_response(image, dets, fid))
+            resp, coords_pack_ms = _build_detect_response(image, dets, fid)
+            coords_pack_ms_total += coords_pack_ms
+            results.append(resp)
+
+        total_ms = (time.perf_counter() - req_start) * 1000.0
+        batch_size = len(images)
+        avg_decode_ms = decode_ms_total / batch_size if batch_size > 0 else 0.0
+        avg_pack_ms = coords_pack_ms_total / batch_size if batch_size > 0 else 0.0
+        _perf_log(
+            "BatchDetect perf batch=%d mode_raw=%d mode_jpeg=%d decode_ms_total=%.2f decode_ms_avg=%.2f infer_ms=%.2f coords_pack_ms_total=%.2f coords_pack_ms_avg=%.2f total_ms=%.2f",
+            batch_size,
+            raw_count,
+            jpeg_count,
+            decode_ms_total,
+            avg_decode_ms,
+            infer_ms,
+            coords_pack_ms_total,
+            avg_pack_ms,
+            total_ms,
+        )
 
         return detection_pb2.BatchDetectResponse(results=results)
 
@@ -145,7 +214,10 @@ class DetectionServicer(detection_pb2_grpc.DetectionServiceServicer):
         return detection_pb2.ParamsResponse(success=True, message="Parameters updated")
 
 
-def serve():
+def serve(perf_log: bool = False):
+    global PERF_LOG_ENABLED
+    PERF_LOG_ENABLED = perf_log
+
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=MAX_WORKERS),
         options=[
@@ -164,4 +236,11 @@ def serve():
 
 
 if __name__ == "__main__":
-    serve()
+    parser = argparse.ArgumentParser(description="AI detection gRPC server")
+    parser.add_argument("--perf-log", action="store_true", help="enable performance logs")
+    args = parser.parse_args()
+
+    if args.perf_log:
+        logger.info("Performance logging enabled")
+
+    serve(perf_log=args.perf_log)

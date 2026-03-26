@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"anomaly_detection_system/backend/internal/grpcclient"
+	"anomaly_detection_system/backend/internal/perf"
 )
 
 // MakeProcessFunc creates the ProcessFunc that calls single-frame gRPC Detect.
@@ -58,6 +60,51 @@ func (bp *BatchProcessor) Run(ctx context.Context, inputCh <-chan *Task, outputC
 	batchCh := make(chan batchWork, bp.workers*2)
 	unorderedCh := make(chan []*OrderedResult, bp.workers*2)
 
+	var dispatchedBatches int64
+	var dispatchedFrames int64
+	var processedBatches int64
+	var processedFrames int64
+	var failedBatches int64
+	var totalWorkerNs int64
+	var totalGRPCNs int64
+
+	if perf.Enabled() {
+		stopPerfLog := make(chan struct{})
+		defer close(stopPerfLog)
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					db := atomic.LoadInt64(&dispatchedBatches)
+					df := atomic.LoadInt64(&dispatchedFrames)
+					pb := atomic.LoadInt64(&processedBatches)
+					pf := atomic.LoadInt64(&processedFrames)
+					fb := atomic.LoadInt64(&failedBatches)
+					workerNs := atomic.LoadInt64(&totalWorkerNs)
+					grpcNs := atomic.LoadInt64(&totalGRPCNs)
+
+					avgBatch := 0.0
+					avgWorkerMs := 0.0
+					avgGRPCMs := 0.0
+					if pb > 0 {
+						avgBatch = float64(pf) / float64(pb)
+						avgWorkerMs = float64(time.Duration(workerNs).Milliseconds()) / float64(pb)
+						avgGRPCMs = float64(time.Duration(grpcNs).Milliseconds()) / float64(pb)
+					}
+
+					perf.Logf("BatchProcessor perf: in_q=%d batch_q=%d unordered_q=%d out_q=%d dispatched_batches=%d dispatched_frames=%d processed_batches=%d processed_frames=%d failed_batches=%d avg_batch=%.2f avg_worker=%.2fms avg_grpc=%.2fms",
+						len(inputCh), len(batchCh), len(unorderedCh), len(outputCh), db, df, pb, pf, fb, avgBatch, avgWorkerMs, avgGRPCMs)
+				case <-stopPerfLog:
+					return
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
 	// Launch worker pool: each worker picks a batch, calls BatchDetect, sends results
 	var workerWg sync.WaitGroup
 	for i := 0; i < bp.workers; i++ {
@@ -70,7 +117,17 @@ func (bp *BatchProcessor) Run(ctx context.Context, inputCh <-chan *Task, outputC
 					if !ok {
 						return
 					}
-					results := bp.processBatch(ctx, work)
+					workerStart := time.Now()
+					results, grpcLatency, failed := bp.processBatch(ctx, work)
+					if perf.Enabled() {
+						atomic.AddInt64(&processedBatches, 1)
+						atomic.AddInt64(&processedFrames, int64(len(work.tasks)))
+						atomic.AddInt64(&totalWorkerNs, int64(time.Since(workerStart)))
+						atomic.AddInt64(&totalGRPCNs, int64(grpcLatency))
+						if failed {
+							atomic.AddInt64(&failedBatches, 1)
+						}
+					}
 					select {
 					case unorderedCh <- results:
 					case <-ctx.Done():
@@ -109,6 +166,10 @@ func (bp *BatchProcessor) Run(ctx context.Context, inputCh <-chan *Task, outputC
 		work := batchWork{tasks: batch}
 		select {
 		case batchCh <- work:
+			if perf.Enabled() {
+				atomic.AddInt64(&dispatchedBatches, 1)
+				atomic.AddInt64(&dispatchedFrames, int64(len(work.tasks)))
+			}
 		case <-ctx.Done():
 		}
 		batch = make([]*Task, 0, bp.batchSize)
@@ -142,7 +203,7 @@ func (bp *BatchProcessor) Run(ctx context.Context, inputCh <-chan *Task, outputC
 }
 
 // processBatch calls BatchDetect for a single batch and returns per-frame results.
-func (bp *BatchProcessor) processBatch(ctx context.Context, work batchWork) []*OrderedResult {
+func (bp *BatchProcessor) processBatch(ctx context.Context, work batchWork) ([]*OrderedResult, time.Duration, bool) {
 	images := make([][]byte, len(work.tasks))
 	frameIDs := make([]int64, len(work.tasks))
 	for i, t := range work.tasks {
@@ -151,13 +212,15 @@ func (bp *BatchProcessor) processBatch(ctx context.Context, work batchWork) []*O
 	}
 
 	results := make([]*OrderedResult, len(work.tasks))
+	grpcStart := time.Now()
 	resp, err := bp.client.BatchDetect(ctx, images, frameIDs)
+	grpcLatency := time.Since(grpcStart)
 	if err != nil {
-		log.Printf("BatchDetect error for %d frames: %v", len(work.tasks), err)
+		log.Printf("BatchDetect error: frames=%d latency=%s err=%v", len(work.tasks), grpcLatency, err)
 		for i, t := range work.tasks {
 			results[i] = &OrderedResult{SeqNo: t.SeqNo, Err: err}
 		}
-		return results
+		return results, grpcLatency, true
 	}
 
 	apiResults := resp.GetResults()
@@ -168,7 +231,12 @@ func (bp *BatchProcessor) processBatch(ctx context.Context, work batchWork) []*O
 			results[i] = &OrderedResult{SeqNo: t.SeqNo, Err: fmt.Errorf("batch result missing index %d", i)}
 		}
 	}
-	return results
+
+	if perf.Enabled() && grpcLatency > 250*time.Millisecond {
+		perf.Logf("BatchDetect slow call: frames=%d latency=%s", len(work.tasks), grpcLatency)
+	}
+
+	return results, grpcLatency, false
 }
 
 // reorderResults collects unordered batch results and emits them in SeqNo order
@@ -179,6 +247,11 @@ func (bp *BatchProcessor) reorderResults(ctx context.Context, unorderedCh <-chan
 	var h resultHeap
 	heap.Init(&h)
 	nextSeq := int64(0)
+	emitted := int64(0)
+	lateDropped := int64(0)
+	gapSkips := int64(0)
+	logTicker := time.NewTicker(time.Second)
+	defer logTicker.Stop()
 
 	var gapTimer *time.Timer
 	var gapTimerCh <-chan time.Time
@@ -213,6 +286,7 @@ func (bp *BatchProcessor) reorderResults(ctx context.Context, unorderedCh <-chan
 		for h.Len() > 0 && h[0].SeqNo < nextSeq {
 			late := heap.Pop(&h).(*OrderedResult)
 			log.Printf("BatchProcessor reorder: dropping late result seq=%d expected=%d", late.SeqNo, nextSeq)
+			lateDropped++
 		}
 		for h.Len() > 0 && h[0].SeqNo == nextSeq {
 			item := heap.Pop(&h).(*OrderedResult)
@@ -222,6 +296,7 @@ func (bp *BatchProcessor) reorderResults(ctx context.Context, unorderedCh <-chan
 				return false
 			}
 			nextSeq++
+			emitted++
 		}
 		if h.Len() > 0 && h[0].SeqNo > nextSeq {
 			startGapTimer()
@@ -255,9 +330,15 @@ func (bp *BatchProcessor) reorderResults(ctx context.Context, unorderedCh <-chan
 				continue
 			}
 			log.Printf("BatchProcessor reorder: gap timeout, skipping seq=%d to seq=%d", nextSeq, h[0].SeqNo)
+			gapSkips++
 			nextSeq = h[0].SeqNo
 			if !emitReady() {
 				return
+			}
+		case <-logTicker.C:
+			if perf.Enabled() {
+				perf.Logf("BatchProcessor reorder perf: heap=%d out_q=%d next_seq=%d emitted=%d late_dropped=%d gap_skips=%d",
+					h.Len(), len(outputCh), nextSeq, emitted, lateDropped, gapSkips)
 			}
 		case <-ctx.Done():
 			return

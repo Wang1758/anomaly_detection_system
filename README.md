@@ -63,12 +63,24 @@ pip install -r requirements.txt
 python server.py
 ```
 
+开启性能日志（可选）：
+
+```bash
+python server.py --perf-log
+```
+
 **2. Backend (Go)**
 
 ```bash
 cd backend
 go mod tidy
 AI_SERVICE_ADDR=localhost:50051 SERVER_PORT=:8080 DATA_DIR=../data go run -tags gocv ./cmd/server/
+```
+
+开启性能日志（可选）：
+
+```bash
+AI_SERVICE_ADDR=localhost:50051 SERVER_PORT=:8080 DATA_DIR=../data go run -tags gocv ./cmd/server/ --perf-log
 ```
 
 > 注：后端仅支持 GoCV 模式，请先安装 OpenCV 后再启动。
@@ -92,6 +104,8 @@ nc -vz 192.168.***.*** 50051
 ```
 
 若不通，请检查宿主机防火墙是否放行 `50051/tcp`，并确认 Python 服务已启动（`python server.py`）。
+
+如需诊断性能瓶颈，可在两端启动时追加 `--perf-log` 参数。
 
 **3. Frontend (React)**
 
@@ -156,6 +170,19 @@ LLM_API_KEY=sk-xxx LLM_BASE_URL=https://api.deepseek.com/v1 LLM_MODEL=deepseek-c
 ### Frontend (React)
 
 前端本身不读取环境变量。开发模式下 Vite 代理 `/api` 和 `/ws` 到 `http://localhost:8080`（见 `vite.config.ts`）；生产模式由 Nginx 反向代理到 `backend:8080`（见 `nginx.conf`）。
+
+## 性能日志开关（命令行参数）
+
+项目支持通过命令行参数开关性能日志，默认关闭。
+
+- Python AI Service：`--perf-log`
+	- 关闭：`python server.py`
+	- 开启：`python server.py --perf-log`
+- Go Backend：`--perf-log`
+	- 关闭：`go run -tags gocv ./cmd/server/`
+	- 开启：`go run -tags gocv ./cmd/server/ --perf-log`
+
+建议仅在定位性能问题时开启，避免高频日志影响吞吐与磁盘写入。
 
 ## 核心工作流
 
