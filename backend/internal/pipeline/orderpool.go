@@ -15,14 +15,20 @@ const defaultGapTimeout = 1 * time.Second
 // Task is a unit of work carrying a frame and its sequence number.
 type Task struct {
 	SeqNo      int64
-	ImageBytes []byte
+	ImageBytes []byte // 640x640 RGB raw bytes for AI inference
+	OrigJPEG   []byte // Original resolution JPEG for high-res streaming
+	OrigWidth  int
+	OrigHeight int
 }
 
 // OrderedResult pairs a sequence number with its detection response.
 type OrderedResult struct {
-	SeqNo  int64
-	Result *pb.DetectResponse
-	Err    error
+	SeqNo      int64
+	Result     *pb.DetectResponse
+	OrigJPEG   []byte // Carried from Task for high-res streaming
+	OrigWidth  int
+	OrigHeight int
+	Err        error
 }
 
 // resultHeap is a min-heap ordered by SeqNo for reordering.

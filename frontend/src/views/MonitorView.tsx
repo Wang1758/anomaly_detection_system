@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { TopControlBar } from '../components/monitor/TopControlBar';
 import { LiveFeed } from '../components/monitor/LiveFeed';
 import { PendingQueue } from '../components/monitor/PendingQueue';
@@ -6,6 +6,75 @@ import { Lightbox } from '../components/ui/Lightbox';
 import { CrystalButton } from '../components/ui/CrystalButton';
 import { useAppStore } from '../stores/appStore';
 import { Check, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import type { DetectionMeta } from '../types';
+
+const NORMAL_COLOR = '#00ff00';
+const UNCERTAIN_COLOR = '#ff3333';
+const FONT = '14px "JetBrains Mono", "SF Mono", monospace';
+
+function drawLightboxBoxes(
+  canvas: HTMLCanvasElement,
+  img: HTMLImageElement,
+  detections: DetectionMeta[],
+) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const cw = img.clientWidth;
+  const ch = img.clientHeight;
+  canvas.width = cw;
+  canvas.height = ch;
+
+  const natW = img.naturalWidth;
+  const natH = img.naturalHeight;
+  if (!natW || !natH) return;
+
+  const imgRatio = natW / natH;
+  const containerRatio = cw / ch;
+  let renderW: number, renderH: number, offX: number, offY: number;
+
+  if (imgRatio > containerRatio) {
+    renderW = cw;
+    renderH = cw / imgRatio;
+    offX = 0;
+    offY = (ch - renderH) / 2;
+  } else {
+    renderH = ch;
+    renderW = ch * imgRatio;
+    offX = (cw - renderW) / 2;
+    offY = 0;
+  }
+
+  const sx = renderW / natW;
+  const sy = renderH / natH;
+
+  ctx.clearRect(0, 0, cw, ch);
+
+  for (const det of detections) {
+    const x1 = det.x1 * sx + offX;
+    const y1 = det.y1 * sy + offY;
+    const w = (det.x2 - det.x1) * sx;
+    const h = (det.y2 - det.y1) * sy;
+    const color = det.is_uncertain ? UNCERTAIN_COLOR : NORMAL_COLOR;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x1, y1, w, h);
+
+    const label = `${det.class_name} ${(det.confidence * 100).toFixed(0)}%${det.is_uncertain ? ' [?]' : ''}`;
+    ctx.font = FONT;
+    const tm = ctx.measureText(label);
+    const textH = 18;
+    const pad = 4;
+
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.75;
+    ctx.fillRect(x1, Math.max(0, y1 - textH - pad), tm.width + pad * 2, textH + pad);
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, x1 + pad, Math.max(textH, y1 - pad));
+  }
+}
 
 export function MonitorView() {
   const { lightboxAlert, setLightboxAlert, removeAlert } = useAppStore();
@@ -13,6 +82,15 @@ export function MonitorView() {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
+  const lightboxImgRef = useRef<HTMLImageElement>(null);
+  const lightboxCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  const redrawLightboxBoxes = useCallback(() => {
+    const img = lightboxImgRef.current;
+    const canvas = lightboxCanvasRef.current;
+    if (!img || !canvas || !lightboxAlert) return;
+    drawLightboxBoxes(canvas, img, lightboxAlert.detections);
+  }, [lightboxAlert]);
 
   useEffect(() => {
     if (lightboxAlert) {
@@ -104,16 +182,28 @@ export function MonitorView() {
               onMouseLeave={() => setDragging(false)}
               onDoubleClick={resetView}
             >
-              <img
-                src={lightboxAlert.image_url}
-                alt={`Frame ${lightboxAlert.frame_id}`}
-                className="w-full h-full object-contain select-none"
-                draggable={false}
-                style={{
-                  transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
-                  transformOrigin: 'center center',
-                }}
-              />
+              <div className="w-full h-full relative">
+                <img
+                  ref={lightboxImgRef}
+                  src={lightboxAlert.image_url}
+                  alt={`Frame ${lightboxAlert.frame_id}`}
+                  className="w-full h-full object-contain select-none"
+                  draggable={false}
+                  onLoad={redrawLightboxBoxes}
+                  style={{
+                    transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+                    transformOrigin: 'center center',
+                  }}
+                />
+                <canvas
+                  ref={lightboxCanvasRef}
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  style={{
+                    transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+                    transformOrigin: 'center center',
+                  }}
+                />
+              </div>
             </div>
             <div className="flex items-center justify-between mb-4">
               <div>

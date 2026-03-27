@@ -43,3 +43,13 @@ type AlertEvent struct {
 	Detections []DetectionMeta `json:"detections"`
 	Timestamp  string          `json:"timestamp"`
 }
+
+// DetectionFrame carries real-time detection overlay data via WebSocket.
+// Coordinates are in the original high-res frame coordinate system.
+type DetectionFrame struct {
+	Type        string          `json:"type"`
+	FrameID     int64           `json:"frame_id"`
+	FrameWidth  int             `json:"frame_width"`
+	FrameHeight int             `json:"frame_height"`
+	Detections  []DetectionMeta `json:"detections"`
+}

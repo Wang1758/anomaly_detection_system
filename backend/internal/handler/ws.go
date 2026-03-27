@@ -8,13 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"anomaly_detection_system/backend/internal/models"
 	"anomaly_detection_system/backend/internal/pipeline"
 
 	"nhooyr.io/websocket"
 )
 
-// WSHub manages WebSocket connections and broadcasts alert events.
+// WSHub manages WebSocket connections and broadcasts both alert events
+// and real-time detection overlay data to all connected clients.
 type WSHub struct {
 	mu      sync.RWMutex
 	clients map[*websocket.Conn]context.CancelFunc
@@ -26,7 +26,8 @@ func NewWSHub(pipe *pipeline.Pipeline) *WSHub {
 		clients: make(map[*websocket.Conn]context.CancelFunc),
 		pipe:    pipe,
 	}
-	go hub.broadcastLoop()
+	go hub.alertBroadcastLoop()
+	go hub.detectionBroadcastLoop()
 	return hub
 }
 
@@ -47,7 +48,6 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("WebSocket client connected, total=%d", n)
 
-	// Keep connection alive, read messages (for future bidirectional use)
 	for {
 		_, _, err := conn.Read(ctx)
 		if err != nil {
@@ -64,7 +64,7 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	log.Printf("WebSocket client disconnected, total=%d", rem)
 }
 
-func (h *WSHub) broadcastLoop() {
+func (h *WSHub) alertBroadcastLoop() {
 	for {
 		bc := h.pipe.GetBroadcaster()
 		if bc == nil {
@@ -73,24 +73,45 @@ func (h *WSHub) broadcastLoop() {
 		}
 
 		for event := range bc.AlertCh {
-			h.broadcast(event)
+			data, err := json.Marshal(event)
+			if err != nil {
+				log.Printf("Failed to marshal alert: %v", err)
+				continue
+			}
+			h.broadcastRaw(data)
 		}
 	}
 }
 
-func (h *WSHub) broadcast(event *models.AlertEvent) {
-	data, err := json.Marshal(event)
-	if err != nil {
-		log.Printf("Failed to marshal alert: %v", err)
-		return
-	}
+func (h *WSHub) detectionBroadcastLoop() {
+	for {
+		bc := h.pipe.GetBroadcaster()
+		if bc == nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
 
+		for frame := range bc.DetectionCh {
+			data, err := json.Marshal(frame)
+			if err != nil {
+				continue
+			}
+			h.broadcastRaw(data)
+		}
+	}
+}
+
+func (h *WSHub) broadcastRaw(data []byte) {
 	h.mu.RLock()
 	conns := make([]*websocket.Conn, 0, len(h.clients))
 	for conn := range h.clients {
 		conns = append(conns, conn)
 	}
 	h.mu.RUnlock()
+
+	if len(conns) == 0 {
+		return
+	}
 
 	var stale []*websocket.Conn
 	for _, conn := range conns {

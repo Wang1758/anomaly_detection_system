@@ -22,7 +22,13 @@ func MakeProcessFunc(client *grpcclient.Client) ProcessFunc {
 			log.Printf("gRPC detect error for frame %d: %v", task.SeqNo, err)
 			return &OrderedResult{SeqNo: task.SeqNo, Err: err}
 		}
-		return &OrderedResult{SeqNo: task.SeqNo, Result: resp}
+		return &OrderedResult{
+			SeqNo:      task.SeqNo,
+			Result:     resp,
+			OrigJPEG:   task.OrigJPEG,
+			OrigWidth:  task.OrigWidth,
+			OrigHeight: task.OrigHeight,
+		}
 	}
 }
 
@@ -226,7 +232,13 @@ func (bp *BatchProcessor) processBatch(ctx context.Context, work batchWork) ([]*
 	apiResults := resp.GetResults()
 	for i, t := range work.tasks {
 		if i < len(apiResults) {
-			results[i] = &OrderedResult{SeqNo: t.SeqNo, Result: apiResults[i]}
+			results[i] = &OrderedResult{
+				SeqNo:      t.SeqNo,
+				Result:     apiResults[i],
+				OrigJPEG:   t.OrigJPEG,
+				OrigWidth:  t.OrigWidth,
+				OrigHeight: t.OrigHeight,
+			}
 		} else {
 			results[i] = &OrderedResult{SeqNo: t.SeqNo, Err: fmt.Errorf("batch result missing index %d", i)}
 		}

@@ -22,6 +22,14 @@ export interface AlertEvent {
   timestamp: string;
 }
 
+export interface DetectionFrame {
+  type: 'detections';
+  frame_id: number;
+  frame_width: number;
+  frame_height: number;
+  detections: DetectionMeta[];
+}
+
 export interface Sample {
   id: number;
   frame_id: number;

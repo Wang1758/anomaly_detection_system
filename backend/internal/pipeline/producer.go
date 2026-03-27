@@ -16,6 +16,7 @@ const (
 	modelInputWidth    = 640
 	modelInputHeight   = 640
 	modelInputChannels = 3
+	origJPEGQuality    = 85
 )
 
 func ValidateSource(sourceType, sourceAddr string) error {
@@ -51,6 +52,7 @@ type Producer struct {
 	sourceType string
 	sourceAddr string
 	fps        int
+	frameSink  func([]byte)
 }
 
 func NewProducer(sourceType, sourceAddr string, fps int) *Producer {
@@ -59,6 +61,10 @@ func NewProducer(sourceType, sourceAddr string, fps int) *Producer {
 		sourceAddr: sourceAddr,
 		fps:        fps,
 	}
+}
+
+func (p *Producer) SetFrameSink(frameSink func([]byte)) {
+	p.frameSink = frameSink
 }
 
 func (p *Producer) Run(ctx context.Context, pool *OrderedPool) error {
@@ -94,7 +100,13 @@ func (p *Producer) RunCh(ctx context.Context, ch chan<- *Task) error {
 			}
 		}
 
-		enqueuedTask := &Task{SeqNo: acceptedSeq, ImageBytes: task.ImageBytes}
+		enqueuedTask := &Task{
+			SeqNo:      acceptedSeq,
+			ImageBytes: task.ImageBytes,
+			OrigJPEG:   task.OrigJPEG,
+			OrigWidth:  task.OrigWidth,
+			OrigHeight: task.OrigHeight,
+		}
 		select {
 		case ch <- enqueuedTask:
 			acceptedSeq++
@@ -161,6 +173,23 @@ func (p *Producer) run(ctx context.Context, emit func(*Task) bool) error {
 			windowReadCost += time.Since(readStart)
 
 			prepStart := time.Now()
+
+			origWidth := mat.Cols()
+			origHeight := mat.Rows()
+
+			// Encode the original high-res frame as JPEG for streaming
+			origBuf, encErr := gocv.IMEncodeWithParams(gocv.JPEGFileExt, mat, []int{gocv.IMWriteJpegQuality, origJPEGQuality})
+			if encErr != nil {
+				log.Printf("Producer: JPEG encode error: %v", encErr)
+				continue
+			}
+			origJPEG := append([]byte(nil), origBuf.GetBytes()...)
+			origBuf.Close()
+			if p.frameSink != nil {
+				p.frameSink(origJPEG)
+			}
+
+			// Resize a copy to 640x640 for AI inference
 			gocv.Resize(mat, &resized, image.Pt(modelInputWidth, modelInputHeight), 0, 0, gocv.InterpolationLinear)
 			gocv.CvtColor(resized, &rgb, gocv.ColorBGRToRGB)
 			raw := rgb.ToBytes()
@@ -171,7 +200,13 @@ func (p *Producer) run(ctx context.Context, emit func(*Task) bool) error {
 			windowPrepared++
 			windowPrepCost += time.Since(prepStart)
 
-			task := &Task{SeqNo: seqNo, ImageBytes: append([]byte(nil), raw...)}
+			task := &Task{
+				SeqNo:      seqNo,
+				ImageBytes: append([]byte(nil), raw...),
+				OrigJPEG:   origJPEG,
+				OrigWidth:  origWidth,
+				OrigHeight: origHeight,
+			}
 			if !emit(task) {
 				return nil
 			}
@@ -189,8 +224,8 @@ func (p *Producer) run(ctx context.Context, emit func(*Task) bool) error {
 						avgPrepMs = float64(windowPrepCost.Milliseconds()) / float64(windowPrepared)
 					}
 					produceRate := float64(windowPrepared) / elapsed.Seconds()
-					perf.Logf("Producer capture perf: read=%d prepared=%d rate=%.1ffps avg_read=%.2fms avg_preprocess=%.2fms seq=%d",
-						windowRead, windowPrepared, produceRate, avgReadMs, avgPrepMs, seqNo)
+					perf.Logf("Producer capture perf: read=%d prepared=%d rate=%.1ffps avg_read=%.2fms avg_preprocess=%.2fms seq=%d origRes=%dx%d",
+						windowRead, windowPrepared, produceRate, avgReadMs, avgPrepMs, seqNo, origWidth, origHeight)
 					windowStart = now
 					windowRead = 0
 					windowPrepared = 0

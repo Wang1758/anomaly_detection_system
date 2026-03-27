@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from proto import detection_pb2, detection_pb2_grpc
 from model_manager import ModelManager
 from detector import Detector, DetectorParams
-from visualizer import draw_detections, encode_jpeg
+from visualizer import draw_detections, encode_jpeg  # noqa: F401 — kept for standalone/debug use
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,8 +33,8 @@ MODEL_DIR = os.environ.get("MODEL_DIR", "models")
 DEFAULT_MODEL = "best.pt"
 GRPC_PORT = os.environ.get("GRPC_PORT", "50051")
 MAX_WORKERS = 4
-VIS_JPEG_QUALITY = int(os.environ.get("VIS_JPEG_QUALITY", "82"))
-ORIGINAL_JPEG_QUALITY = int(os.environ.get("ORIGINAL_JPEG_QUALITY", "90"))
+VIS_JPEG_QUALITY = int(os.environ.get("VIS_JPEG_QUALITY", "82"))  # kept for debug/standalone use
+ORIGINAL_JPEG_QUALITY = int(os.environ.get("ORIGINAL_JPEG_QUALITY", "90"))  # kept for debug/standalone use
 MODEL_INPUT_WIDTH = int(os.environ.get("MODEL_INPUT_WIDTH", "640"))
 MODEL_INPUT_HEIGHT = int(os.environ.get("MODEL_INPUT_HEIGHT", "640"))
 MODEL_INPUT_CHANNELS = 3
@@ -65,14 +65,13 @@ def _build_detect_response(
     det_dicts: list[dict],
     frame_id: int,
 ) -> tuple["detection_pb2.DetectResponse", float]:
-    """Shared helper to build a DetectResponse from detections."""
-    vis_image = draw_detections(image, det_dicts)
-    vis_bytes = encode_jpeg(vis_image, quality=VIS_JPEG_QUALITY)
+    """Build a DetectResponse with detection coordinates only.
 
+    Visualization and image encoding are no longer performed here.
+    The Go backend handles high-res streaming and the frontend draws
+    bounding boxes on a canvas overlay.
+    """
     has_uncertain = any(d.get("is_uncertain", False) for d in det_dicts)
-    original_bytes = b""
-    if has_uncertain:
-        original_bytes = encode_jpeg(image, quality=ORIGINAL_JPEG_QUALITY)
 
     serialize_start = time.perf_counter()
     meta_list = []
@@ -89,8 +88,6 @@ def _build_detect_response(
     coords_serialize_ms = (time.perf_counter() - serialize_start) * 1000.0
 
     response = detection_pb2.DetectResponse(
-        visualized_image=vis_bytes,
-        original_image=original_bytes,
         detections=meta_list,
         has_uncertain=has_uncertain,
         frame_id=frame_id,

@@ -16,11 +16,17 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const mjpegSubscriberBufferSize = 16
+const (
+	mjpegSubscriberBufferSize = 16
+	aiInputWidth              = 640.0
+	aiInputHeight             = 640.0
+)
 
-// Broadcaster consumes ordered results and fans out to video stream + alert channel.
+// Broadcaster consumes ordered results and fans out to:
+// - MJPEG stream (original high-res frames, no boxes drawn)
+// - Detection channel (real-time bbox overlay data via WebSocket)
+// - Alert channel (uncertain detection alerts via WebSocket)
 type Broadcaster struct {
-	// Latest MJPEG frame for streaming
 	mu          sync.RWMutex
 	latestFrame []byte
 	outputFPS   float64
@@ -36,9 +42,12 @@ type Broadcaster struct {
 	subMu       sync.RWMutex
 	subscribers map[chan []byte]struct{}
 
-	// Alert channel for WebSocket push
+	// Alert channel for uncertain detection WebSocket push
 	AlertCh     chan *models.AlertEvent
 	alertWorkCh chan alertWork
+
+	// Detection channel for real-time bbox overlay WebSocket push
+	DetectionCh chan *models.DetectionFrame
 
 	filter  *filter.SpatiotemporalFilter
 	dataDir string
@@ -46,8 +55,7 @@ type Broadcaster struct {
 
 type alertWork struct {
 	frameID    int64
-	visFrame   []byte
-	original   []byte
+	origJPEG   []byte
 	detections []models.DetectionMeta
 	timestamp  string
 }
@@ -57,6 +65,7 @@ func NewBroadcaster(f *filter.SpatiotemporalFilter, dataDir string, targetFPS in
 		subscribers: make(map[chan []byte]struct{}),
 		AlertCh:     make(chan *models.AlertEvent, 64),
 		alertWorkCh: make(chan alertWork, 128),
+		DetectionCh: make(chan *models.DetectionFrame, 256),
 		filter:      f,
 		dataDir:     dataDir,
 		targetFPS:   targetFPS,
@@ -109,45 +118,30 @@ func (b *Broadcaster) GetOutputFPS() float64 {
 	return b.outputFPS
 }
 
-// HandleResult processes a single ordered result from the pool.
-func (b *Broadcaster) HandleResult(r *OrderedResult) {
-	if r.Err != nil || r.Result == nil {
+// PublishFrame pushes original JPEG frames to MJPEG subscribers at target FPS.
+// This path is intentionally decoupled from AI inference so stream smoothness
+// reflects capture throughput, not detection throughput.
+func (b *Broadcaster) PublishFrame(frame []byte) {
+	if len(frame) == 0 {
 		return
 	}
 
-	visFrame := r.Result.VisualizedImage
-	if len(visFrame) == 0 {
-		return
-	}
-
-	// Update latest frame and broadcast to MJPEG subscribers
 	now := time.Now()
-	emit := true
 	b.mu.Lock()
-	if b.targetFPS > 0 {
-		minInterval := time.Second / time.Duration(b.targetFPS)
-		if !b.lastEmitAt.IsZero() && now.Sub(b.lastEmitAt) < minInterval {
-			emit = false
-		}
-	}
-	if emit {
-		b.latestFrame = visFrame
-		b.lastEmitAt = now
-	}
-	b.frameBytes += int64(len(visFrame))
+	b.latestFrame = frame
+	b.lastEmitAt = now
+	b.fpsFrames++
+	b.frameBytes += int64(len(frame))
 	if b.fpsWindowAt.IsZero() {
 		b.fpsWindowAt = now
-	}
-	if emit {
-		b.fpsFrames++
 	}
 	if elapsed := now.Sub(b.fpsWindowAt); elapsed >= time.Second {
 		b.outputFPS = float64(b.fpsFrames) / elapsed.Seconds()
 		if perf.Enabled() {
 			mbps := (float64(b.frameBytes) / 1024.0 / 1024.0) / elapsed.Seconds()
 			subscribers := b.subscriberCount()
-			perf.Logf("Broadcaster perf: output_fps=%.1f bytes=%.2fMB/s subscribers=%d alert_q=%d fanout_drops=%d",
-				b.outputFPS, mbps, subscribers, len(b.alertWorkCh), b.fanoutDrops)
+			perf.Logf("Broadcaster perf: output_fps=%.1f bytes=%.2fMB/s subscribers=%d alert_q=%d detection_q=%d fanout_drops=%d",
+				b.outputFPS, mbps, subscribers, len(b.alertWorkCh), len(b.DetectionCh), b.fanoutDrops)
 		}
 		b.fpsFrames = 0
 		b.fpsWindowAt = now
@@ -156,16 +150,11 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 	}
 	b.mu.Unlock()
 
-	if !emit {
-		return
-	}
-
 	b.subMu.RLock()
 	for ch := range b.subscribers {
 		select {
-		case ch <- visFrame:
+		case ch <- frame:
 		default:
-			// Drop frame if subscriber is slow
 			if perf.Enabled() {
 				b.mu.Lock()
 				b.fanoutDrops++
@@ -174,26 +163,76 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 		}
 	}
 	b.subMu.RUnlock()
+}
 
-	// Process uncertain detections
+// mapDetections converts detection coordinates from AI input space (640x640)
+// to the original high-res frame coordinate system.
+func mapDetections(dets []*models.DetectionMeta, origWidth, origHeight int) {
+	scaleX := float64(origWidth) / aiInputWidth
+	scaleY := float64(origHeight) / aiInputHeight
+	for _, d := range dets {
+		d.X1 = float32(float64(d.X1) * scaleX)
+		d.Y1 = float32(float64(d.Y1) * scaleY)
+		d.X2 = float32(float64(d.X2) * scaleX)
+		d.Y2 = float32(float64(d.Y2) * scaleY)
+	}
+}
+
+// HandleResult processes a single ordered result from the pool.
+func (b *Broadcaster) HandleResult(r *OrderedResult) {
+	if r.Err != nil || r.Result == nil {
+		return
+	}
+
+	origFrame := r.OrigJPEG
+	if len(origFrame) > 0 {
+		b.PublishFrame(origFrame)
+	}
+
+	// Convert proto detections to model detections and map coordinates to orig resolution
+	allDets := make([]models.DetectionMeta, 0, len(r.Result.Detections))
+	detPtrs := make([]*models.DetectionMeta, 0, len(r.Result.Detections))
+	for _, d := range r.Result.Detections {
+		det := models.DetectionMeta{
+			X1: d.X1, Y1: d.Y1, X2: d.X2, Y2: d.Y2,
+			Confidence:   d.Confidence,
+			ClassID:      d.ClassId,
+			ClassName:    d.ClassName,
+			IsUncertain:  d.IsUncertain,
+			Entropy:      d.Entropy,
+			AnomalyScore: d.AnomalyScore,
+		}
+		allDets = append(allDets, det)
+	}
+	for i := range allDets {
+		detPtrs = append(detPtrs, &allDets[i])
+	}
+	mapDetections(detPtrs, r.OrigWidth, r.OrigHeight)
+
+	// Push detection overlay data via WebSocket channel
+	detFrame := &models.DetectionFrame{
+		Type:        "detections",
+		FrameID:     r.Result.FrameId,
+		FrameWidth:  r.OrigWidth,
+		FrameHeight: r.OrigHeight,
+		Detections:  allDets,
+	}
+	select {
+	case b.DetectionCh <- detFrame:
+	default:
+		// Drop if consumer is slow; real-time overlay is best-effort
+	}
+
+	// Process uncertain detections for alert persistence
 	if !r.Result.HasUncertain {
 		return
 	}
 
 	var uncertainDets []models.DetectionMeta
-	for _, d := range r.Result.Detections {
+	for _, d := range allDets {
 		if d.IsUncertain {
-			det := models.DetectionMeta{
-				X1: d.X1, Y1: d.Y1, X2: d.X2, Y2: d.Y2,
-				Confidence:   d.Confidence,
-				ClassID:      d.ClassId,
-				ClassName:    d.ClassName,
-				IsUncertain:  d.IsUncertain,
-				Entropy:      d.Entropy,
-				AnomalyScore: d.AnomalyScore,
-			}
-			if b.filter.ShouldAlert(det) {
-				uncertainDets = append(uncertainDets, det)
+			if b.filter.ShouldAlert(d) {
+				uncertainDets = append(uncertainDets, d)
 			}
 		}
 	}
@@ -201,11 +240,13 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 	if len(uncertainDets) == 0 {
 		return
 	}
+	if len(origFrame) == 0 {
+		return
+	}
 
 	work := alertWork{
 		frameID:    r.Result.FrameId,
-		visFrame:   append([]byte(nil), visFrame...),
-		original:   append([]byte(nil), r.Result.OriginalImage...),
+		origJPEG:   append([]byte(nil), origFrame...),
 		detections: uncertainDets,
 		timestamp:  time.Now().Format(time.RFC3339),
 	}
@@ -242,33 +283,25 @@ func (b *Broadcaster) persistAlert(work alertWork) {
 		return
 	}
 
+	// Save the original high-res frame (no longer saving visualized image)
 	origName := fmt.Sprintf("frame_%d.jpg", work.frameID)
 	origPath := filepath.Join(imgDir, origName)
-	if len(work.original) > 0 {
-		if err := os.WriteFile(origPath, work.original, 0644); err != nil {
+	if len(work.origJPEG) > 0 {
+		if err := os.WriteFile(origPath, work.origJPEG, 0644); err != nil {
 			log.Printf("Failed to save original image: %v", err)
 			return
 		}
 	}
 
-	visName := fmt.Sprintf("vis_frame_%d.jpg", work.frameID)
-	visPath := filepath.Join(imgDir, visName)
-	if len(work.visFrame) > 0 {
-		if err := os.WriteFile(visPath, work.visFrame, 0644); err != nil {
-			log.Printf("Failed to save visualized image: %v", err)
-		}
-	}
-
 	sample := models.Sample{
-		FrameID:             work.frameID,
-		ImagePath:           origName,
-		VisualizedImagePath: visName,
-		UncertainCount:      len(work.detections),
-		Status:              "pending",
+		FrameID:        work.frameID,
+		ImagePath:      origName,
+		UncertainCount: len(work.detections),
+		Status:         "pending",
 	}
 	if err := db.DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "frame_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"image_path", "visualized_image_path", "uncertain_count", "status", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"image_path", "uncertain_count", "status", "updated_at"}),
 	}).Create(&sample).Error; err != nil {
 		log.Printf("Failed to save sample: %v", err)
 	}
@@ -281,7 +314,7 @@ func (b *Broadcaster) persistAlert(work alertWork) {
 	event := &models.AlertEvent{
 		Type:       "alert",
 		FrameID:    work.frameID,
-		ImageURL:   fmt.Sprintf("/api/images/%s", visName),
+		ImageURL:   fmt.Sprintf("/api/images/%s", origName),
 		Detections: work.detections,
 		Timestamp:  work.timestamp,
 	}

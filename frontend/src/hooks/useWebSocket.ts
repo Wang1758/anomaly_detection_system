@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
-import type { AlertEvent } from '../types';
+import type { AlertEvent, DetectionFrame } from '../types';
+import { emitDetection } from './useDetectionStream';
 
 const BUFFER_DELAY_MS = 500;
 const DRAIN_INTERVAL_MS = 120;
@@ -65,12 +66,18 @@ export function useWebSocket(onAlert: (event: AlertEvent) => void) {
 
     ws.onmessage = (event) => {
       try {
-        const data: AlertEvent = JSON.parse(event.data);
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'detections') {
+          emitDetection(data as DetectionFrame);
+          return;
+        }
+
         if (data.type === 'alert') {
           if (bufferRef.current.length >= MAX_BUFFER_SIZE) {
             bufferRef.current.shift();
           }
-          bufferRef.current.push(data);
+          bufferRef.current.push(data as AlertEvent);
           ensureDrain();
         }
       } catch (e) {
