@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -284,7 +285,7 @@ func (b *Broadcaster) persistAlert(work alertWork) {
 	}
 
 	// Save the original high-res frame (no longer saving visualized image)
-	origName := fmt.Sprintf("frame_%d.jpg", work.frameID)
+	origName := fmt.Sprintf("frame_%d_%d.jpg", work.frameID, time.Now().UnixNano())
 	origPath := filepath.Join(imgDir, origName)
 	if len(work.origJPEG) > 0 {
 		if err := os.WriteFile(origPath, work.origJPEG, 0644); err != nil {
@@ -297,11 +298,12 @@ func (b *Broadcaster) persistAlert(work alertWork) {
 		FrameID:        work.frameID,
 		ImagePath:      origName,
 		UncertainCount: len(work.detections),
+		DetectionsJSON: encodeDetections(work.detections),
 		Status:         "pending",
 	}
 	if err := db.DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "frame_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"image_path", "uncertain_count", "status", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"image_path", "uncertain_count", "detections_json", "status", "updated_at"}),
 	}).Create(&sample).Error; err != nil {
 		log.Printf("Failed to save sample: %v", err)
 	}
@@ -324,4 +326,15 @@ func (b *Broadcaster) persistAlert(work alertWork) {
 	default:
 		log.Println("Alert channel full, dropping event")
 	}
+}
+
+func encodeDetections(dets []models.DetectionMeta) string {
+	if len(dets) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(dets)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
 }

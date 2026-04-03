@@ -119,6 +119,8 @@ export function ConfigView() {
             onChange={(v) => update('filter_iou', v)} />
           <SliderField label="并发 Workers" value={local.workers} min={1} max={16} step={1}
             onChange={(v) => update('workers', v)} />
+          <SliderField label="mAP评估周期 (小时)" value={local.map_eval_interval_hours} min={1} max={168} step={1}
+            onChange={(v) => update('map_eval_interval_hours', v)} />
         </GlassCard>
       </div>
 

@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -18,6 +21,7 @@ import (
 	"anomaly_detection_system/backend/internal/pipeline"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type APIHandler struct {
@@ -25,6 +29,12 @@ type APIHandler struct {
 	pipe       *pipeline.Pipeline
 	grpcClient *grpcclient.Client
 	llmJudger  *LLMJudger
+	trainingMu sync.Mutex
+	training   bool
+	evalMu     sync.Mutex
+	evalRunning bool
+	evalLogMu   sync.Mutex
+	evalLogs    []string
 }
 
 func NewAPIHandler(cfg *config.Config, pipe *pipeline.Pipeline, grpcClient *grpcclient.Client, llm *LLMJudger) *APIHandler {
@@ -58,6 +68,10 @@ func (h *APIHandler) UpdateConfig(c *gin.Context) {
 	}
 	if req.BatchTimeout != nil && *req.BatchTimeout < 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "batch_timeout_ms must be >= 0"})
+		return
+	}
+	if req.MapEvalIntervalHours != nil && *req.MapEvalIntervalHours <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "map_eval_interval_hours must be > 0"})
 		return
 	}
 
@@ -109,9 +123,10 @@ func (h *APIHandler) LabelSample(c *gin.Context) {
 	}
 
 	result := db.DB.Model(&models.Sample{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"label":  req.Label,
-		"status": "labeled",
-		"source": "human",
+		"label":           req.Label,
+		"status":          "labeled",
+		"source":          "human",
+		"detections_json": detectionsByHumanLabel(req.Label),
 	})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
@@ -141,9 +156,10 @@ func (h *APIHandler) LabelSampleByFrame(c *gin.Context) {
 	}
 
 	result := db.DB.Model(&models.Sample{}).Where("frame_id = ?", frameID).Updates(map[string]interface{}{
-		"label":  req.Label,
-		"status": "labeled",
-		"source": "human",
+		"label":           req.Label,
+		"status":          "labeled",
+		"source":          "human",
+		"detections_json": detectionsByHumanLabel(req.Label),
 	})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
@@ -174,8 +190,9 @@ func (h *APIHandler) RelabelSample(c *gin.Context) {
 	}
 
 	result := db.DB.Model(&models.Sample{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"label":  req.Label,
-		"source": "human",
+		"label":           req.Label,
+		"source":          "human",
+		"detections_json": detectionsByHumanLabel(req.Label),
 	})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
@@ -194,6 +211,13 @@ type aiJudgeItemResult struct {
 	Label   bool   `json:"label,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 	Error   string `json:"error,omitempty"`
+}
+
+func detectionsByHumanLabel(label bool) interface{} {
+	if label {
+		return gorm.Expr("detections_json")
+	}
+	return "[]"
 }
 
 const maxLLMConcurrency = 5
@@ -358,30 +382,170 @@ func (h *APIHandler) aiJudgeViaYOLO(ctx context.Context, pending []models.Sample
 // --- Training endpoints ---
 
 func (h *APIHandler) TriggerTraining(c *gin.Context) {
+	h.trainingMu.Lock()
+	if h.training {
+		h.trainingMu.Unlock()
+		c.JSON(http.StatusConflict, gin.H{"error": "training already running"})
+		return
+	}
+	h.training = true
+	h.trainingMu.Unlock()
+
 	var count int64
 	db.DB.Model(&models.Sample{}).Where("status = ?", "labeled").Count(&count)
 
 	if count == 0 {
+		h.trainingMu.Lock()
+		h.training = false
+		h.trainingMu.Unlock()
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no labeled samples to train"})
 		return
 	}
 
+	snap := h.cfg.Read()
+	modelPath := filepath.Join(snap.DataDir, "models", "latest.pt")
 	run := models.TrainingRun{
 		SampleCount: int(count),
+		Status:      "running",
 		Accuracy:    0.0,
-		ModelPath:   filepath.Join(h.cfg.Read().DataDir, "models", "latest.pt"),
+		ModelPath:   modelPath,
 	}
 	if err := db.DB.Create(&run).Error; err != nil {
+		h.trainingMu.Lock()
+		h.training = false
+		h.trainingMu.Unlock()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	go h.runTrainingPipeline(run.ID, modelPath)
+
+	c.JSON(http.StatusOK, gin.H{"message": "training triggered", "sample_count": count, "run_id": run.ID})
+}
+
+func (h *APIHandler) runTrainingPipeline(runID uint, modelPath string) {
+	defer func() {
+		h.trainingMu.Lock()
+		h.training = false
+		h.trainingMu.Unlock()
+	}()
+
+	snap := h.cfg.Read()
+	if err := os.MkdirAll(filepath.Dir(modelPath), 0755); err != nil {
+		h.finishTrainingRun(runID, "failed", 0, "mkdir model dir failed: "+err.Error())
+		return
+	}
+
+	dbPath := filepath.Join(snap.DataDir, "db", "app.db")
+	metricsPath := filepath.Join(snap.DataDir, "models", "latest_metrics.json")
+	pythonBin := strings.TrimSpace(os.Getenv("TRAINING_PYTHON"))
+	if pythonBin == "" {
+		pythonBin = "python3"
+	}
+	scriptPath := strings.TrimSpace(os.Getenv("TRAINING_SCRIPT"))
+	if scriptPath == "" {
+		for _, candidate := range []string{
+			filepath.Join("..", "ai_service", "retrain.py"),
+			filepath.Join("ai_service", "retrain.py"),
+		} {
+			if _, err := os.Stat(candidate); err == nil {
+				scriptPath = candidate
+				break
+			}
+		}
+		if scriptPath == "" {
+			scriptPath = filepath.Join("..", "ai_service", "retrain.py")
+		}
+	}
+
+	args := []string{
+		scriptPath,
+		"--db-path", dbPath,
+		"--data-dir", snap.DataDir,
+		"--output-model", modelPath,
+		"--metrics-out", metricsPath,
+	}
+	if v := strings.TrimSpace(os.Getenv("TRAINING_EPOCHS")); v != "" {
+		args = append(args, "--epochs", v)
+	}
+	if v := strings.TrimSpace(os.Getenv("TRAINING_BATCH")); v != "" {
+		args = append(args, "--batch", v)
+	}
+	if v := strings.TrimSpace(os.Getenv("TRAINING_IMGSZ")); v != "" {
+		args = append(args, "--imgsz", v)
+	}
+	if v := strings.TrimSpace(os.Getenv("TRAINING_DEVICE")); v != "" {
+		args = append(args, "--device", v)
+	}
+	if v := strings.TrimSpace(os.Getenv("TRAINING_BASE_MODEL")); v != "" {
+		args = append(args, "--base-model", v)
+	}
+	if v := strings.TrimSpace(os.Getenv("TRAINING_BASE_DATASET")); v != "" {
+		args = append(args, "--base-dataset", v)
+	}
+
+	cmd := exec.Command(pythonBin, args...)
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(output.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		h.finishTrainingRun(runID, "failed", 0, msg)
+		return
+	}
+
+	accuracy := readTrainingAccuracy(metricsPath)
+	reloadPath := strings.TrimSpace(os.Getenv("AI_RELOAD_MODEL_PATH"))
+	if reloadPath == "" {
+		reloadPath = modelPath
+	}
+
+	resp, err := h.grpcClient.ReloadModel(context.Background(), reloadPath)
+	if err != nil {
+		h.finishTrainingRun(runID, "failed", accuracy, "model reload failed: "+err.Error())
+		return
+	}
+	if !resp.GetSuccess() {
+		h.finishTrainingRun(runID, "failed", accuracy, "model reload rejected: "+resp.GetMessage())
 		return
 	}
 
 	if err := db.DB.Model(&models.Sample{}).Where("status = ?", "labeled").Update("status", "trained").Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.finishTrainingRun(runID, "failed", accuracy, "sample status update failed: "+err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "training triggered", "sample_count": count, "run_id": run.ID})
+	h.finishTrainingRun(runID, "succeeded", accuracy, "training and model reload succeeded")
+}
+
+func (h *APIHandler) finishTrainingRun(runID uint, status string, accuracy float64, message string) {
+	updates := map[string]interface{}{
+		"status":   status,
+		"accuracy": accuracy,
+		"message":  message,
+	}
+	if err := db.DB.Model(&models.TrainingRun{}).Where("id = ?", runID).Updates(updates).Error; err != nil {
+		log.Printf("failed to update training run %d: %v", runID, err)
+	}
+}
+
+func readTrainingAccuracy(metricsPath string) float64 {
+	type metrics struct {
+		Accuracy float64 `json:"accuracy"`
+	}
+	b, err := os.ReadFile(metricsPath)
+	if err != nil {
+		return 0
+	}
+	var m metrics
+	if err := json.Unmarshal(b, &m); err != nil {
+		return 0
+	}
+	return m.Accuracy
 }
 
 func (h *APIHandler) TrainingHistory(c *gin.Context) {
@@ -456,5 +620,8 @@ func (h *APIHandler) ServeImage(c *gin.Context) {
 		c.Status(http.StatusBadRequest)
 		return
 	}
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	c.File(imgPath)
 }

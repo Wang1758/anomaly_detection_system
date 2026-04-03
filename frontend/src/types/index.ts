@@ -68,6 +68,17 @@ export interface SystemConfig {
   filter_iou: number;
   server_port: string;
   data_dir: string;
+  map_eval_interval_hours: number;
+  map_eval_dataset_dir: string;
+}
+
+export interface MapEvalRun {
+  id: number;
+  status: 'success' | 'failed';
+  map50: number;
+  map50_95: number;
+  message: string;
+  created_at: string;
 }
 
 export type ViewType = 'monitor' | 'config' | 'stats' | 'library';

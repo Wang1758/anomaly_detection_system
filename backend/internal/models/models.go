@@ -8,6 +8,7 @@ type Sample struct {
 	ImagePath           string    `json:"image_path"`
 	VisualizedImagePath string    `json:"visualized_image_path"`
 	UncertainCount      int       `gorm:"default:0" json:"uncertain_count"`
+	DetectionsJSON      string    `gorm:"type:text" json:"detections_json"`
 	Status              string    `gorm:"default:pending" json:"status"` // pending | labeled | trained
 	Label               *bool     `json:"label"`                         // true=positive, false=negative, nil=unlabeled
 	Source              string    `json:"source"`                        // "human" | "ai_agent"
@@ -18,9 +19,21 @@ type Sample struct {
 type TrainingRun struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
 	SampleCount int       `json:"sample_count"`
+	Status      string    `gorm:"default:running" json:"status"` // running | succeeded | failed
 	Accuracy    float64   `json:"accuracy"`
 	ModelPath   string    `json:"model_path"`
+	Message     string    `json:"message"`
 	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type EvalRun struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Status    string    `gorm:"default:success" json:"status"` // success | failed
+	Map50     float64   `json:"map50"`
+	Map5095   float64   `json:"map50_95"`
+	Message   string    `json:"message"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type DetectionMeta struct {

@@ -60,6 +60,7 @@ func main() {
 
 	// Init handlers
 	apiHandler := handler.NewAPIHandler(cfg, pipe, grpcClient, llmJudger)
+	apiHandler.StartMapEvalScheduler()
 	streamHandler := handler.NewStreamHandler(pipe)
 	wsHub := handler.NewWSHub(pipe)
 
@@ -92,6 +93,9 @@ func main() {
 
 		api.POST("/training/trigger", apiHandler.TriggerTraining)
 		api.GET("/training/history", apiHandler.TrainingHistory)
+		api.GET("/metrics/map-history", apiHandler.MapHistory)
+		api.POST("/metrics/map-eval-now", apiHandler.TriggerMapEvalNow)
+		api.GET("/metrics/map-eval-logs", apiHandler.MapEvalLogs)
 
 		api.POST("/pipeline/start", apiHandler.StartPipeline)
 		api.POST("/pipeline/stop", apiHandler.StopPipeline)

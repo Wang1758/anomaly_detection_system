@@ -66,7 +66,7 @@ func openAndMigrate(dbPath string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	if err := db.AutoMigrate(&models.Sample{}, &models.TrainingRun{}); err != nil {
+	if err := db.AutoMigrate(&models.Sample{}, &models.TrainingRun{}, &models.EvalRun{}); err != nil {
 		return nil, err
 	}
 

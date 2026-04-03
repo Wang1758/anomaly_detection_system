@@ -10,6 +10,10 @@ import sys
 import argparse
 import logging
 import time
+import json
+import threading
+import subprocess
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from concurrent import futures
 
 import grpc
@@ -32,6 +36,7 @@ logger = logging.getLogger(__name__)
 MODEL_DIR = os.environ.get("MODEL_DIR", "models")
 DEFAULT_MODEL = "best.pt"
 GRPC_PORT = os.environ.get("GRPC_PORT", "50051")
+EVAL_HTTP_PORT = int(os.environ.get("EVAL_HTTP_PORT", "50052"))
 MAX_WORKERS = 4
 VIS_JPEG_QUALITY = int(os.environ.get("VIS_JPEG_QUALITY", "82"))  # kept for debug/standalone use
 ORIGINAL_JPEG_QUALITY = int(os.environ.get("ORIGINAL_JPEG_QUALITY", "90"))  # kept for debug/standalone use
@@ -40,6 +45,7 @@ MODEL_INPUT_HEIGHT = int(os.environ.get("MODEL_INPUT_HEIGHT", "640"))
 MODEL_INPUT_CHANNELS = 3
 RAW_IMAGE_BYTES = MODEL_INPUT_WIDTH * MODEL_INPUT_HEIGHT * MODEL_INPUT_CHANNELS
 PERF_LOG_ENABLED = False
+EVAL_LOCK = threading.Lock()
 
 
 def _decode_image(img_bytes: bytes) -> np.ndarray | None:
@@ -58,6 +64,139 @@ def _decode_image(img_bytes: bytes) -> np.ndarray | None:
 def _perf_log(msg: str, *args):
     if PERF_LOG_ENABLED:
         logger.info(msg, *args)
+
+
+def _resolve_eval_script() -> str:
+    return os.path.join(os.path.dirname(__file__), "evaluate_map.py")
+
+
+def _resolve_existing_dataset_dir(raw_dataset_dir: str) -> tuple[str, list[str]]:
+    candidates: list[str] = []
+
+    def add_candidate(path: str):
+        p = str(path).strip()
+        if not p:
+            return
+        if p not in candidates:
+            candidates.append(p)
+
+    add_candidate(raw_dataset_dir)
+
+    normalized = raw_dataset_dir.replace("\\", "/")
+    add_candidate(normalized)
+
+    if normalized.endswith("/data/indoor"):
+        add_candidate(normalized.replace("/data/indoor", "/indoor"))
+    if normalized.endswith("\\data\\indoor"):
+        add_candidate(normalized.replace("\\data\\indoor", "\\indoor"))
+
+    add_candidate("../indoor")
+    add_candidate(os.path.join(os.path.dirname(__file__), "..", "indoor"))
+
+    for c in candidates:
+        if os.path.isdir(c):
+            return c, candidates
+
+    return raw_dataset_dir, candidates
+
+
+def _run_eval_request(payload: dict) -> tuple[int, dict]:
+    if not EVAL_LOCK.acquire(blocking=False):
+        return 409, {"ok": False, "error": "evaluation already running", "logs": []}
+
+    try:
+        dataset_dir_raw = str(payload.get("dataset_dir") or os.environ.get("MAP_EVAL_DATASET_DIR") or "../indoor")
+        dataset_dir, dataset_candidates = _resolve_existing_dataset_dir(dataset_dir_raw)
+        model_path = str(payload.get("model") or os.environ.get("MAP_EVAL_MODEL_PATH") or os.path.join(MODEL_DIR, DEFAULT_MODEL))
+        metrics_out = str(payload.get("metrics_out") or os.path.join(MODEL_DIR, "map_eval_metrics.json"))
+        imgsz = int(payload.get("imgsz") or os.environ.get("TRAINING_IMGSZ") or 640)
+        device = str(payload.get("device") or os.environ.get("MAP_EVAL_DEVICE") or os.environ.get("TRAINING_DEVICE") or "")
+
+        cmd = [
+            sys.executable,
+            _resolve_eval_script(),
+            "--dataset-dir", dataset_dir,
+            "--model", model_path,
+            "--metrics-out", metrics_out,
+            "--imgsz", str(max(32, imgsz)),
+        ]
+        if device.strip():
+            cmd.extend(["--device", device.strip()])
+
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+        merged_output = "\n".join([x for x in [proc.stdout, proc.stderr] if x])
+        logs = [line for line in merged_output.splitlines() if line.strip()]
+
+        payload_out = {
+            "ok": proc.returncode == 0,
+            "dataset": dataset_dir,
+            "dataset_candidates": dataset_candidates,
+            "model": model_path,
+            "device": device or "auto",
+            "logs": logs,
+        }
+
+        for line in reversed(logs):
+            s = line.strip()
+            if not s.startswith("{") or not s.endswith("}"):
+                continue
+            try:
+                maybe = json.loads(s)
+                if isinstance(maybe, dict):
+                    payload_out.update(maybe)
+                    break
+            except Exception:
+                continue
+
+        if proc.returncode != 0:
+            if not payload_out.get("error"):
+                payload_out["error"] = f"evaluate_map.py exited with {proc.returncode}"
+            return 500, payload_out
+        return 200, payload_out
+    except Exception as exc:
+        return 500, {"ok": False, "error": str(exc), "logs": []}
+    finally:
+        EVAL_LOCK.release()
+
+
+class _EvalHTTPHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        logger.info("EvalHTTP %s", format % args)
+
+    def do_POST(self):
+        if self.path != "/eval-map":
+            self._write_json(404, {"ok": False, "error": "not found"})
+            return
+
+        try:
+            content_len = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            content_len = 0
+        raw = self.rfile.read(content_len) if content_len > 0 else b"{}"
+        try:
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            payload = {}
+
+        status, data = _run_eval_request(payload)
+        self._write_json(status, data)
+
+    def _write_json(self, status: int, data: dict):
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
 
 def _build_detect_response(
@@ -225,6 +364,11 @@ def serve(perf_log: bool = False):
     detection_pb2_grpc.add_DetectionServiceServicer_to_server(
         DetectionServicer(), server
     )
+
+    eval_http = ThreadingHTTPServer(("0.0.0.0", EVAL_HTTP_PORT), _EvalHTTPHandler)
+    threading.Thread(target=eval_http.serve_forever, daemon=True).start()
+    logger.info("AI Eval HTTP started on 0.0.0.0:%d", EVAL_HTTP_PORT)
+
     addr = f"[::]:{GRPC_PORT}"
     server.add_insecure_port(addr)
     server.start()

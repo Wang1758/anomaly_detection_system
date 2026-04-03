@@ -18,6 +18,9 @@ type configUpdateBody struct {
 	FilterIoU           *float64 `json:"filter_iou"`
 	SourceType          *string  `json:"source_type"`
 	SourceAddr          *string  `json:"source_addr"`
+	MapEvalIntervalHours *int     `json:"map_eval_interval_hours"`
+	MapEvalDatasetDir    *string  `json:"map_eval_dataset_dir"`
+	MapEvalRemoteURL     *string  `json:"map_eval_remote_url"`
 }
 
 func mergeConfigUpdate(dst *config.Config, req *configUpdateBody) {
@@ -62,5 +65,14 @@ func mergeConfigUpdate(dst *config.Config, req *configUpdateBody) {
 	}
 	if req.SourceAddr != nil {
 		dst.SourceAddr = *req.SourceAddr
+	}
+	if req.MapEvalIntervalHours != nil {
+		dst.MapEvalIntervalHours = *req.MapEvalIntervalHours
+	}
+	if req.MapEvalDatasetDir != nil {
+		dst.MapEvalDatasetDir = *req.MapEvalDatasetDir
+	}
+	if req.MapEvalRemoteURL != nil {
+		dst.MapEvalRemoteURL = *req.MapEvalRemoteURL
 	}
 }

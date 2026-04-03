@@ -31,13 +31,14 @@ export function PendingQueue() {
             .pop() || '';
           const fallbackName = (s.image_path || '').split('/').pop() || '';
           if (!fileName) return null;
+          const ts = encodeURIComponent(s.created_at || String(Date.now()));
           return {
             type: 'alert' as const,
             sample_id: s.id,
             frame_id: s.frame_id,
-            image_url: `/api/images/${encodeURIComponent(fileName)}`,
+            image_url: `/api/images/${encodeURIComponent(fileName)}?t=${ts}`,
             fallback_image_url: fallbackName
-              ? `/api/images/${encodeURIComponent(fallbackName)}`
+              ? `/api/images/${encodeURIComponent(fallbackName)}?t=${ts}`
               : undefined,
             detections: [],
             uncertain_count: s.uncertain_count ?? 0,

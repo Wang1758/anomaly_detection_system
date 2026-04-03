@@ -151,6 +151,15 @@ npm run dev
 | `AI_SERVICE_ADDR` | Python AI 服务的 gRPC 地址 | `192.168.3.23:50051` |
 | `SERVER_PORT` | 后端 HTTP 监听端口（自动补 `:` 前缀） | `:8080` |
 | `DATA_DIR` | 数据根目录（图片/数据库/模型） | `../data` |
+| `TRAINING_PYTHON` | 增量训练 Python 解释器 | `python3` |
+| `TRAINING_SCRIPT` | 增量训练脚本路径 | `../ai_service/retrain.py` |
+| `TRAINING_BASE_MODEL` | 训练基线权重路径（可选） | 空（自动选择） |
+| `TRAINING_BASE_DATASET` | 原始训练集路径（YOLO 格式，`images/train`+`labels/train`） | 空（可选） |
+| `TRAINING_EPOCHS` | 增量训练 epoch 数（可选） | `10` |
+| `TRAINING_BATCH` | 增量训练 batch size（可选） | `8` |
+| `TRAINING_IMGSZ` | 增量训练输入尺寸（可选） | `640` |
+| `TRAINING_DEVICE` | 增量训练 device（可选） | 空（ultralytics 自动） |
+| `AI_RELOAD_MODEL_PATH` | 训练后通知 AI 服务热更新的模型路径 | 默认与 `DATA_DIR/models/latest.pt` 一致 |
 | `LLM_API_KEY` | 多模态大模型 API 密钥（不填则"AI一键判断"回退到 YOLO 重检测） | 无（未启用） |
 | `LLM_BASE_URL` | 多模态大模型 API 端点（兼容 OpenAI / 通义千问 / DeepSeek 等） | `https://api.openai.com/v1` |
 | `LLM_MODEL` | 多模态大模型名称 | `gpt-4o` |
@@ -192,3 +201,17 @@ LLM_API_KEY=sk-xxx LLM_BASE_URL=https://api.deepseek.com/v1 LLM_MODEL=deepseek-c
 4. **异常检测** → 不确定性目标经时空过滤后通过 WebSocket 推送
 5. **人工标注** → 前端待处理队列，支持确认/误报二分类
 6. **增量训练** → 标注数据回流触发模型微调，双缓冲热更新
+
+### 增量训练执行链路（已实现）
+
+1. 前端点击“触发增量训练”调用 `POST /api/training/trigger`
+2. 后端创建 `training_runs` 记录（`running`）并异步执行 `ai_service/retrain.py`
+3. `retrain.py` 从 `data/db/app.db` 读取 `status=labeled` 样本，构建 YOLO 数据集并训练
+	- 人工标注为“乌骨鸡”时：保留不确定检测框坐标作为正样本框
+	- 人工标注为“不是乌骨鸡”时：清空该样本检测框，仅作为困难背景样本
+	- 若配置 `TRAINING_BASE_DATASET`，会将人工筛选样本混入原始训练集做迭代训练
+4. 训练产出 `DATA_DIR/models/latest.pt` 和 `latest_metrics.json`
+5. 后端调用 gRPC `ReloadModel(model_path)` 通知 AI Service 热更新
+6. Python `ModelManager` 采用双缓冲原子切换模型；成功后 run 状态变 `succeeded`，并把样本状态改为 `trained`
+
+> 容器部署时，如果 backend 与 ai_service 的容器内路径不同，请设置 `AI_RELOAD_MODEL_PATH`（例如 `/app/models/latest.pt`）。

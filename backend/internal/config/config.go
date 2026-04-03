@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -33,6 +34,11 @@ type Config struct {
 	ServerPort string `json:"server_port"`
 	DataDir    string `json:"data_dir"`
 
+	// mAP evaluation
+	MapEvalIntervalHours int    `json:"map_eval_interval_hours"`
+	MapEvalDatasetDir    string `json:"map_eval_dataset_dir"`
+	MapEvalRemoteURL     string `json:"map_eval_remote_url"`
+
 	// LLM (multimodal) for AI Judge — loaded from env only, never exposed via API
 	LLMApiKey  string `json:"-"`
 	LLMBaseURL string `json:"-"`
@@ -64,6 +70,17 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := strings.TrimSpace(os.Getenv("DATA_DIR")); v != "" {
 		c.DataDir = v
+	}
+	if v := strings.TrimSpace(os.Getenv("MAP_EVAL_INTERVAL_HOURS")); v != "" {
+		if n, err := parsePositiveInt(v); err == nil {
+			c.MapEvalIntervalHours = n
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("MAP_EVAL_DATASET_DIR")); v != "" {
+		c.MapEvalDatasetDir = v
+	}
+	if v := strings.TrimSpace(os.Getenv("MAP_EVAL_REMOTE_URL")); v != "" {
+		c.MapEvalRemoteURL = v
 	}
 	if v := strings.TrimSpace(os.Getenv("LLM_API_KEY")); v != "" {
 		c.LLMApiKey = v
@@ -105,6 +122,9 @@ func Default() *Config {
 		FilterIoU:           0.5,
 		ServerPort:          ":8080",
 		DataDir:             "../data",
+		MapEvalIntervalHours: 24,
+		MapEvalDatasetDir:    "../indoor",
+		MapEvalRemoteURL:     "",
 		LLMBaseURL:          "https://api.openai.com/v1",
 		LLMModel:            "gpt-4o",
 	}
@@ -130,6 +150,9 @@ func (c *Config) Read() *Config {
 		FilterIoU:           c.FilterIoU,
 		ServerPort:          c.ServerPort,
 		DataDir:             c.DataDir,
+		MapEvalIntervalHours: c.MapEvalIntervalHours,
+		MapEvalDatasetDir:    c.MapEvalDatasetDir,
+		MapEvalRemoteURL:     c.MapEvalRemoteURL,
 		LLMApiKey:           c.LLMApiKey,
 		LLMBaseURL:          c.LLMBaseURL,
 		LLMModel:            c.LLMModel,
@@ -140,4 +163,13 @@ func (c *Config) Update(fn func(*Config)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	fn(c)
+}
+
+func parsePositiveInt(v string) (int, error) {
+	var n int
+	_, err := fmt.Sscanf(v, "%d", &n)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("invalid positive int")
+	}
+	return n, nil
 }
