@@ -107,12 +107,13 @@ func main() {
 	// Root hint to avoid 404 when opening backend port in browser
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"service":         "anomaly-detection-backend",
-			"message":         "Backend is running. Open frontend at http://localhost:3000",
-			"frontend_url":    "http://localhost:3000",
-			"api_base":        "/api",
-			"stream_endpoint": "/api/stream/mjpeg",
-			"ws_endpoint":     "/ws/events",
+			"service":          "anomaly-detection-backend",
+			"message":          "Backend is running. Open frontend at http://localhost:3000",
+			"frontend_url":     "http://localhost:3000",
+			"api_base":         "/api",
+			"stream_endpoint":  "/api/stream/mjpeg",
+			"ws_endpoint":      "/ws/events",
+			"ws_live_endpoint": "/ws/live",
 		})
 	})
 
@@ -125,6 +126,7 @@ func main() {
 
 	// WebSocket
 	r.GET("/ws/events", gin.WrapF(wsHub.HandleWS))
+	r.GET("/ws/live", gin.WrapF(wsHub.HandleLiveWS))
 
 	log.Printf("Server starting on %s", cfg.ServerPort)
 	if err := r.Run(cfg.ServerPort); err != nil {

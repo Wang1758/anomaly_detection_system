@@ -14,6 +14,7 @@ export interface DetectionMeta {
 export interface AlertEvent {
   type: 'alert';
   sample_id?: number;
+  run_id?: number;
   frame_id: number;
   image_url: string;
   fallback_image_url?: string;
@@ -24,6 +25,14 @@ export interface AlertEvent {
 
 export interface DetectionFrame {
   type: 'detections';
+  frame_id: number;
+  frame_width: number;
+  frame_height: number;
+  detections: DetectionMeta[];
+}
+
+export interface LiveFrameMeta {
+  type: 'live_frame';
   frame_id: number;
   frame_width: number;
   frame_height: number;

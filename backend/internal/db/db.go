@@ -66,8 +66,20 @@ func openAndMigrate(dbPath string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	if err := db.AutoMigrate(&models.Sample{}, &models.TrainingRun{}, &models.EvalRun{}); err != nil {
+	if err := db.AutoMigrate(&models.Sample{}, &models.TrainingRun{}, &models.EvalRun{}, &models.RuntimeState{}); err != nil {
 		return nil, err
+	}
+
+	if db.Migrator().HasIndex(&models.Sample{}, "idx_samples_frame_id") {
+		if err := db.Migrator().DropIndex(&models.Sample{}, "idx_samples_frame_id"); err != nil {
+			return nil, err
+		}
+	}
+
+	if !db.Migrator().HasIndex(&models.Sample{}, "uniq_run_frame") {
+		if err := db.Migrator().CreateIndex(&models.Sample{}, "uniq_run_frame"); err != nil {
+			return nil, err
+		}
 	}
 
 	return db, nil

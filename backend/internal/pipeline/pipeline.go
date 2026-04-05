@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"anomaly_detection_system/backend/internal/config"
+	"anomaly_detection_system/backend/internal/db"
 	"anomaly_detection_system/backend/internal/filter"
 	"anomaly_detection_system/backend/internal/grpcclient"
 )
@@ -16,12 +17,13 @@ import (
 // collected and processed in batches on the GPU, yielding 3-5x throughput
 // improvement over sequential single-frame gRPC calls.
 type Pipeline struct {
-	mu          sync.Mutex
-	running     bool
-	cancel      context.CancelFunc
-	broadcaster *Broadcaster
-	grpcClient  *grpcclient.Client
-	cfg         *config.Config
+	mu           sync.Mutex
+	running      bool
+	cancel       context.CancelFunc
+	broadcaster  *Broadcaster
+	grpcClient   *grpcclient.Client
+	cfg          *config.Config
+	currentRunID int64
 }
 
 func New(cfg *config.Config, grpcClient *grpcclient.Client) *Pipeline {
@@ -43,6 +45,12 @@ func (p *Pipeline) GetBroadcaster() *Broadcaster {
 	return p.broadcaster
 }
 
+func (p *Pipeline) GetCurrentRunID() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.currentRunID
+}
+
 func (p *Pipeline) Start() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -55,11 +63,19 @@ func (p *Pipeline) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
 
+	runID, err := db.NextPipelineRunID()
+	if err != nil {
+		cancel()
+		p.cancel = nil
+		return err
+	}
+	p.currentRunID = runID
+
 	f := filter.NewSpatiotemporalFilter(snap.FilterTimeWindow, snap.FilterIoU)
 	if p.broadcaster == nil {
-		p.broadcaster = NewBroadcaster(f, snap.DataDir, snap.FPS)
+		p.broadcaster = NewBroadcaster(f, snap.DataDir, snap.FPS, runID)
 	} else {
-		p.broadcaster.ResetForNewRun(f, snap.DataDir, snap.FPS)
+		p.broadcaster.ResetForNewRun(f, snap.DataDir, snap.FPS, runID)
 	}
 	broadcaster := p.broadcaster
 
@@ -101,8 +117,8 @@ func (p *Pipeline) Start() error {
 	}()
 
 	p.running = true
-	log.Printf("Pipeline started (batch_size=%d, batch_timeout=%dms, workers=%d)",
-		snap.BatchSize, snap.BatchTimeout, snap.Workers)
+	log.Printf("Pipeline started (run_id=%d, batch_size=%d, batch_timeout=%dms, workers=%d)",
+		runID, snap.BatchSize, snap.BatchTimeout, snap.Workers)
 	return nil
 }
 

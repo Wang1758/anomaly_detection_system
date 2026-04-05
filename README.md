@@ -38,23 +38,25 @@ anomaly_detection_system/
 ```
 
 ## 快速开始
+### 本地开发前置环境配置
 
-### Docker 启动 (推荐)
+本项目本地开发需先安装以下环境：
 
-```bash
-# 在项目根目录
-docker-compose up --build
-```
-    
-服务端口：
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8080
-- AI gRPC: localhost:50051
+1. **Python 3.11+**
+2. **Go 1.24+**
+3. **Node.js 20+**
+4. **OpenCV 开发库 + 编译工具链**
 
-注意：`http://localhost:8080/` 是后端服务入口（API/流服务），前端页面请访问 `http://localhost:3000/`。
+Ubuntu/centos 配置Go、Node.js和GoCV开发工具链。
+windows 配置python开发环境
+
+目录与文件准备要求：
+
+- `data/indoor`目录放置在与ai_service平级的目录。
+- `ai_service/models/best.pt` 或 `data/models/` 下至少存在一个可加载权重。
+- 若使用“AI 一键判断”的多模态模型，需要提前配置 `LLM_API_KEY`（可选，不配置会回退到 YOLO 重检测）。
 
 ### 本地开发启动
-
 **1. AI Service (Python)**
 
 ```bash
@@ -74,20 +76,20 @@ python server.py --perf-log
 ```bash
 cd backend
 go mod tidy
-AI_SERVICE_ADDR=localhost:50051 SERVER_PORT=:8080 DATA_DIR=../data go run -tags gocv ./cmd/server/
+go run ./cmd/server/
 ```
 
 开启性能日志（可选）：
 
 ```bash
-AI_SERVICE_ADDR=localhost:50051 SERVER_PORT=:8080 DATA_DIR=../data go run -tags gocv ./cmd/server/ --perf-log
+go run ./cmd/server/ --perf-log
 ```
 
 > 注：后端仅支持 GoCV 模式，请先安装 OpenCV 后再启动。
 
 ### 宿主机 + 虚拟机 (NAT) 部署说明
 
-如果 Python `ai_service` 跑在宿主机，而 Go 后端跑在 VMware 虚拟机：
+Python `ai_service` 跑在宿主机，而 Go 后端跑在 VMware 虚拟机：
 
 - 不要使用 `localhost:50051` 或 `127.0.0.1:50051`（这只会指向虚拟机自身）。
 - 请将 `AI_SERVICE_ADDR` 设置为**宿主机在 VMnet8/NAT 网卡上的 IP**，例如：
@@ -135,7 +137,7 @@ npm run dev
 
 ## 环境变量
 
-项目中所有通过环境变量配置的参数如下。本地开发时在启动命令前添加，Docker 部署时在 `docker-compose.yml` 的 `environment` 中设置。
+项目中所有通过环境变量配置的参数如下。本地开发时在启动命令前添加
 
 ### AI Service (Python)
 
@@ -179,19 +181,6 @@ LLM_API_KEY=sk-xxx LLM_BASE_URL=https://api.deepseek.com/v1 LLM_MODEL=deepseek-c
 ### Frontend (React)
 
 前端本身不读取环境变量。开发模式下 Vite 代理 `/api` 和 `/ws` 到 `http://localhost:8080`（见 `vite.config.ts`）；生产模式由 Nginx 反向代理到 `backend:8080`（见 `nginx.conf`）。
-
-## 性能日志开关（命令行参数）
-
-项目支持通过命令行参数开关性能日志，默认关闭。
-
-- Python AI Service：`--perf-log`
-	- 关闭：`python server.py`
-	- 开启：`python server.py --perf-log`
-- Go Backend：`--perf-log`
-	- 关闭：`go run -tags gocv ./cmd/server/`
-	- 开启：`go run -tags gocv ./cmd/server/ --perf-log`
-
-建议仅在定位性能问题时开启，避免高频日志影响吞吐与磁盘写入。
 
 ## 核心工作流
 

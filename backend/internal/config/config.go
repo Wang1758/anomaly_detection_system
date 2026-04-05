@@ -109,7 +109,7 @@ func Default() *Config {
 		AIServiceAddr:       "192.168.3.23:50051", // python服务地址
 		NMSThreshold:        0.9,
 		ConfidenceThreshold: 0.25,
-		EntropyThreshold:    0.75,
+		EntropyThreshold:    0.80,
 		W1:                  0.6,
 		W2:                  0.4,
 		SourceType:          "local",

@@ -42,7 +42,7 @@ export const useAppStore = create<AppState>((set) => ({
       }
       return acc;
     }, []);
-    set({ pendingAlerts: deduped.slice(0, 50) });
+    set({ pendingAlerts: deduped });
   },
   addAlert: (alert) =>
     set((state) => {
@@ -50,11 +50,10 @@ export const useAppStore = create<AppState>((set) => ({
       if (existed) {
         return {
           pendingAlerts: state.pendingAlerts
-            .map((a) => (a.frame_id === alert.frame_id ? alert : a))
-            .slice(0, 50),
+            .map((a) => (a.frame_id === alert.frame_id ? alert : a)),
         };
       }
-      return { pendingAlerts: [alert, ...state.pendingAlerts].slice(0, 50) };
+      return { pendingAlerts: [alert, ...state.pendingAlerts] };
     }),
   removeAlert: (frameId) =>
     set((state) => ({

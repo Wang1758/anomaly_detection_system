@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -25,13 +26,13 @@ import (
 )
 
 type APIHandler struct {
-	cfg        *config.Config
-	pipe       *pipeline.Pipeline
-	grpcClient *grpcclient.Client
-	llmJudger  *LLMJudger
-	trainingMu sync.Mutex
-	training   bool
-	evalMu     sync.Mutex
+	cfg         *config.Config
+	pipe        *pipeline.Pipeline
+	grpcClient  *grpcclient.Client
+	llmJudger   *LLMJudger
+	trainingMu  sync.Mutex
+	training    bool
+	evalMu      sync.Mutex
 	evalRunning bool
 	evalLogMu   sync.Mutex
 	evalLogs    []string
@@ -147,6 +148,16 @@ func (h *APIHandler) LabelSampleByFrame(c *gin.Context) {
 		return
 	}
 
+	runIDStr := c.Query("run_id")
+	var runID int64
+	if runIDStr != "" {
+		runID, err = strconv.ParseInt(runIDStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid run id"})
+			return
+		}
+	}
+
 	var req struct {
 		Label bool `json:"label"`
 	}
@@ -155,7 +166,24 @@ func (h *APIHandler) LabelSampleByFrame(c *gin.Context) {
 		return
 	}
 
-	result := db.DB.Model(&models.Sample{}).Where("frame_id = ?", frameID).Updates(map[string]interface{}{
+	query := db.DB.Model(&models.Sample{}).Where("frame_id = ?", frameID)
+	if runIDStr != "" {
+		query = query.Where("run_id = ?", runID)
+	} else {
+		query = query.Order("run_id DESC")
+	}
+
+	var target models.Sample
+	if err := query.First(&target).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "sample not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	result := db.DB.Model(&models.Sample{}).Where("id = ?", target.ID).Updates(map[string]interface{}{
 		"label":           req.Label,
 		"status":          "labeled",
 		"source":          "human",
@@ -600,6 +628,7 @@ func (h *APIHandler) PipelineStatus(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"running":    h.pipe.IsRunning(),
+		"run_id":     h.pipe.GetCurrentRunID(),
 		"fps":        actualFPS,
 		"target_fps": snap.FPS,
 	})

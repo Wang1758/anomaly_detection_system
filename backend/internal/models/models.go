@@ -4,7 +4,8 @@ import "time"
 
 type Sample struct {
 	ID                  uint      `gorm:"primaryKey" json:"id"`
-	FrameID             int64     `gorm:"uniqueIndex" json:"frame_id"`
+	RunID               int64     `gorm:"index;uniqueIndex:uniq_run_frame" json:"run_id"`
+	FrameID             int64     `gorm:"index;uniqueIndex:uniq_run_frame" json:"frame_id"`
 	ImagePath           string    `json:"image_path"`
 	VisualizedImagePath string    `json:"visualized_image_path"`
 	UncertainCount      int       `gorm:"default:0" json:"uncertain_count"`
@@ -36,6 +37,12 @@ type EvalRun struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type RuntimeState struct {
+	Key       string    `gorm:"primaryKey;size:64" json:"key"`
+	IntValue  int64     `json:"int_value"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type DetectionMeta struct {
 	X1           float32 `json:"x1"`
 	Y1           float32 `json:"y1"`
@@ -51,6 +58,8 @@ type DetectionMeta struct {
 
 type AlertEvent struct {
 	Type       string          `json:"type"`
+	SampleID   uint            `json:"sample_id,omitempty"`
+	RunID      int64           `json:"run_id,omitempty"`
 	FrameID    int64           `json:"frame_id"`
 	ImageURL   string          `json:"image_url"`
 	Detections []DetectionMeta `json:"detections"`
@@ -65,4 +74,15 @@ type DetectionFrame struct {
 	FrameWidth  int             `json:"frame_width"`
 	FrameHeight int             `json:"frame_height"`
 	Detections  []DetectionMeta `json:"detections"`
+}
+
+// LiveFrame bundles one original JPEG frame with its aligned detections.
+// This is used by the low-latency single WebSocket live stream.
+type LiveFrame struct {
+	Type        string          `json:"type"`
+	FrameID     int64           `json:"frame_id"`
+	FrameWidth  int             `json:"frame_width"`
+	FrameHeight int             `json:"frame_height"`
+	Detections  []DetectionMeta `json:"detections"`
+	JPEG        []byte          `json:"-"`
 }

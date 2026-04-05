@@ -114,7 +114,10 @@ export function MonitorView() {
   const handleLightboxLabel = async (label: boolean) => {
     if (!lightboxAlert) return;
     try {
-      const res = await fetch(`/api/samples/frame/${lightboxAlert.frame_id}/label`, {
+      const endpoint = lightboxAlert.sample_id
+        ? `/api/samples/${lightboxAlert.sample_id}/label`
+        : `/api/samples/frame/${lightboxAlert.frame_id}/label`;
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ label }),

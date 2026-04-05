@@ -56,9 +56,12 @@ export function PendingQueue() {
     hydratePending();
   }, [hydratePending]);
 
-  const handleLabel = async (frameId: number, label: boolean) => {
+  const handleLabel = async (alert: AlertEvent, label: boolean) => {
     try {
-      const res = await fetch(`/api/samples/frame/${frameId}/label`, {
+      const endpoint = alert.sample_id
+        ? `/api/samples/${alert.sample_id}/label`
+        : `/api/samples/frame/${alert.frame_id}/label`;
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ label }),
@@ -68,7 +71,7 @@ export function PendingQueue() {
         setJudgeStatus(`标注失败: ${data?.error || '未知错误'}`);
         return;
       }
-      removeAlert(frameId);
+      removeAlert(alert.frame_id);
     } catch (e) {
       console.error('Label failed:', e);
       setJudgeStatus('标注失败: 网络错误');
@@ -156,14 +159,14 @@ export function PendingQueue() {
                   <CrystalButton
                     variant="success"
                     size="sm"
-                    onClick={() => handleLabel(alert.frame_id, true)}
+                    onClick={() => handleLabel(alert, true)}
                   >
                     <Check size={14} />
                   </CrystalButton>
                   <CrystalButton
                     variant="danger"
                     size="sm"
-                    onClick={() => handleLabel(alert.frame_id, false)}
+                    onClick={() => handleLabel(alert, false)}
                   >
                     <X size={14} />
                   </CrystalButton>

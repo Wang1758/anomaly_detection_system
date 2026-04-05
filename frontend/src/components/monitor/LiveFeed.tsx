@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
-import { useDetectionStream } from '../../hooks/useDetectionStream';
-import type { DetectionFrame, DetectionMeta } from '../../types';
+import type { DetectionMeta, LiveFrameMeta } from '../../types';
 
 const NORMAL_COLOR = '#00ff00';
 const UNCERTAIN_COLOR = '#ff3333';
@@ -12,12 +11,11 @@ function drawBoxes(
   detections: DetectionMeta[],
   frameWidth: number,
   frameHeight: number,
-  img: HTMLImageElement,
+  canvasWidth: number,
+  canvasHeight: number,
 ) {
-  const cw = img.clientWidth;
-  const ch = img.clientHeight;
-  ctx.canvas.width = cw;
-  ctx.canvas.height = ch;
+  const cw = canvasWidth;
+  const ch = canvasHeight;
 
   const imgRatio = frameWidth / frameHeight;
   const containerRatio = cw / ch;
@@ -37,8 +35,6 @@ function drawBoxes(
 
   const sx = renderW / frameWidth;
   const sy = renderH / frameHeight;
-
-  ctx.clearRect(0, 0, cw, ch);
 
   for (const det of detections) {
     const x1 = det.x1 * sx + offX;
@@ -75,46 +71,150 @@ export function LiveFeed() {
   const [actualFps, setActualFps] = useState(0);
   const [targetFps, setTargetFps] = useState(0);
 
-  const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const latestFrameRef = useRef<DetectionFrame | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const processingRef = useRef(false);
+  const pendingBufferRef = useRef<ArrayBuffer | null>(null);
+  const latestMetaRef = useRef<LiveFrameMeta | null>(null);
+  const latestBitmapRef = useRef<ImageBitmap | null>(null);
+  const decoderRef = useRef(new TextDecoder());
 
-  const handleDetection = useCallback((frame: DetectionFrame) => {
-    latestFrameRef.current = frame;
+  const drawLiveFrame = useCallback((meta: LiveFrameMeta, bitmap: ImageBitmap) => {
     const canvas = canvasRef.current;
-    const img = imgRef.current;
-    if (!canvas || !img || !img.clientWidth) return;
+    if (!canvas || !canvas.clientWidth || !canvas.clientHeight) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    drawBoxes(ctx, frame.detections, frame.frame_width, frame.frame_height, img);
+
+    const cw = canvas.clientWidth;
+    const ch = canvas.clientHeight;
+    if (canvas.width !== cw || canvas.height !== ch) {
+      canvas.width = cw;
+      canvas.height = ch;
+    }
+
+    ctx.clearRect(0, 0, cw, ch);
+
+    const imgRatio = meta.frame_width / meta.frame_height;
+    const containerRatio = cw / ch;
+    let renderW: number, renderH: number, offX: number, offY: number;
+
+    if (imgRatio > containerRatio) {
+      renderW = cw;
+      renderH = cw / imgRatio;
+      offX = 0;
+      offY = (ch - renderH) / 2;
+    } else {
+      renderH = ch;
+      renderW = ch * imgRatio;
+      offX = (cw - renderW) / 2;
+      offY = 0;
+    }
+
+    ctx.drawImage(bitmap, offX, offY, renderW, renderH);
+    drawBoxes(ctx, meta.detections, meta.frame_width, meta.frame_height, cw, ch);
   }, []);
 
-  useDetectionStream(handleDetection);
+  const decodeAndRender = useCallback(async (buffer: ArrayBuffer) => {
+    if (buffer.byteLength < 5) return;
+
+    const view = new DataView(buffer);
+    const metaLen = view.getUint32(0, false);
+    if (metaLen <= 0 || 4 + metaLen >= buffer.byteLength) return;
+
+    const metaBytes = new Uint8Array(buffer, 4, metaLen);
+    const jpegBytes = new Uint8Array(buffer, 4 + metaLen);
+
+    const meta = JSON.parse(decoderRef.current.decode(metaBytes)) as LiveFrameMeta;
+    if (meta.type !== 'live_frame') return;
+
+    const bitmap = await createImageBitmap(new Blob([jpegBytes], { type: 'image/jpeg' }));
+
+    latestMetaRef.current = meta;
+    const prevBitmap = latestBitmapRef.current;
+    latestBitmapRef.current = bitmap;
+    if (prevBitmap) {
+      prevBitmap.close();
+    }
+
+    drawLiveFrame(meta, bitmap);
+  }, [drawLiveFrame]);
+
+  const pumpLatestBuffer = useCallback(async () => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+
+    try {
+      while (pendingBufferRef.current) {
+        const buffer = pendingBufferRef.current;
+        pendingBufferRef.current = null;
+        await decodeAndRender(buffer);
+      }
+    } finally {
+      processingRef.current = false;
+    }
+  }, [decodeAndRender]);
 
   useEffect(() => {
     if (!pipelineRunning) {
-      latestFrameRef.current = null;
+      pendingBufferRef.current = null;
+      latestMetaRef.current = null;
+      if (latestBitmapRef.current) {
+        latestBitmapRef.current.close();
+        latestBitmapRef.current = null;
+      }
+      wsRef.current?.close();
+      wsRef.current = null;
+
       const canvas = canvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext('2d');
         ctx?.clearRect(0, 0, canvas.width, canvas.height);
       }
+      return;
     }
-  }, [pipelineRunning]);
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/live`);
+    ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      if (!(event.data instanceof ArrayBuffer)) return;
+      pendingBufferRef.current = event.data;
+      void pumpLatestBuffer();
+    };
+
+    ws.onerror = () => {
+      ws.close();
+    };
+
+    return () => {
+      ws.close();
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+      }
+    };
+  }, [pipelineRunning, pumpLatestBuffer]);
 
   // Redraw on resize
   useEffect(() => {
     const onResize = () => {
-      const frame = latestFrameRef.current;
+      const meta = latestMetaRef.current;
+      const bitmap = latestBitmapRef.current;
       const canvas = canvasRef.current;
-      const img = imgRef.current;
-      if (!frame || !canvas || !img || !img.clientWidth) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      drawBoxes(ctx, frame.detections, frame.frame_width, frame.frame_height, img);
+      if (!meta || !bitmap || !canvas || !canvas.clientWidth) return;
+      drawLiveFrame(meta, bitmap);
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, [drawLiveFrame]);
+
+  useEffect(() => {
+    return () => {
+      if (latestBitmapRef.current) {
+        latestBitmapRef.current.close();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -156,16 +256,10 @@ export function LiveFeed() {
           <div className="absolute top-3 right-3 z-20 bg-black/70 text-white text-xs px-3 py-1.5 rounded-lg font-mono pointer-events-none border border-white/15 shadow-sm">
             实时 {Number.isFinite(actualFps) ? actualFps.toFixed(1) : '--'} FPS{targetFps > 0 ? ` / 目标 ${targetFps}` : ''}
           </div>
-          <img
-            ref={imgRef}
-            src="/api/stream/mjpeg"
-            alt="Live Feed"
-            className="w-full h-full object-contain"
-          />
           <canvas
             ref={canvasRef}
-            className="absolute inset-0 w-full h-full pointer-events-none"
-            style={{ zIndex: 10 }}
+            className="absolute inset-0 w-full h-full"
+            style={{ zIndex: 10, backgroundColor: 'transparent' }}
           />
         </div>
       ) : (

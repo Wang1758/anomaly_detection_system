@@ -29,6 +29,7 @@ const (
 // - Alert channel (uncertain detection alerts via WebSocket)
 type Broadcaster struct {
 	mu          sync.RWMutex
+	runID       int64
 	latestFrame []byte
 	outputFPS   float64
 	targetFPS   int
@@ -50,37 +51,44 @@ type Broadcaster struct {
 	// Detection channel for real-time bbox overlay WebSocket push
 	DetectionCh chan *models.DetectionFrame
 
+	// Live channel for synchronized frame+detections push via WebSocket binary
+	LiveCh chan *models.LiveFrame
+
 	filter  *filter.SpatiotemporalFilter
 	dataDir string
 }
 
 type alertWork struct {
+	runID      int64
 	frameID    int64
 	origJPEG   []byte
 	detections []models.DetectionMeta
 	timestamp  string
 }
 
-func NewBroadcaster(f *filter.SpatiotemporalFilter, dataDir string, targetFPS int) *Broadcaster {
+func NewBroadcaster(f *filter.SpatiotemporalFilter, dataDir string, targetFPS int, runID int64) *Broadcaster {
 	b := &Broadcaster{
 		subscribers: make(map[chan []byte]struct{}),
 		AlertCh:     make(chan *models.AlertEvent, 64),
 		alertWorkCh: make(chan alertWork, 128),
 		DetectionCh: make(chan *models.DetectionFrame, 256),
+		LiveCh:      make(chan *models.LiveFrame, 64),
 		filter:      f,
 		dataDir:     dataDir,
 		targetFPS:   targetFPS,
+		runID:       runID,
 	}
 	go b.alertWorker()
 	return b
 }
 
 // ResetForNewRun clears stale frame and updates run-scoped settings.
-func (b *Broadcaster) ResetForNewRun(f *filter.SpatiotemporalFilter, dataDir string, targetFPS int) {
+func (b *Broadcaster) ResetForNewRun(f *filter.SpatiotemporalFilter, dataDir string, targetFPS int, runID int64) {
 	b.mu.Lock()
 	b.latestFrame = nil
 	b.outputFPS = 0
 	b.targetFPS = targetFPS
+	b.runID = runID
 	b.lastEmitAt = time.Time{}
 	b.fpsWindowAt = time.Time{}
 	b.fpsFrames = 0
@@ -186,6 +194,9 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 	}
 
 	origFrame := r.OrigJPEG
+	b.mu.RLock()
+	runID := b.runID
+	b.mu.RUnlock()
 	if len(origFrame) > 0 {
 		b.PublishFrame(origFrame)
 	}
@@ -224,6 +235,23 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 		// Drop if consumer is slow; real-time overlay is best-effort
 	}
 
+	// Push synchronized frame+detections packet for single-channel live rendering
+	if len(origFrame) > 0 {
+		liveFrame := &models.LiveFrame{
+			Type:        "live_frame",
+			FrameID:     r.Result.FrameId,
+			FrameWidth:  r.OrigWidth,
+			FrameHeight: r.OrigHeight,
+			Detections:  allDets,
+			JPEG:        append([]byte(nil), origFrame...),
+		}
+		select {
+		case b.LiveCh <- liveFrame:
+		default:
+			// Drop if consumer is slow; keep live stream low-latency.
+		}
+	}
+
 	// Process uncertain detections for alert persistence
 	if !r.Result.HasUncertain {
 		return
@@ -246,6 +274,7 @@ func (b *Broadcaster) HandleResult(r *OrderedResult) {
 	}
 
 	work := alertWork{
+		runID:      runID,
 		frameID:    r.Result.FrameId,
 		origJPEG:   append([]byte(nil), origFrame...),
 		detections: uncertainDets,
@@ -295,6 +324,7 @@ func (b *Broadcaster) persistAlert(work alertWork) {
 	}
 
 	sample := models.Sample{
+		RunID:          work.runID,
 		FrameID:        work.frameID,
 		ImagePath:      origName,
 		UncertainCount: len(work.detections),
@@ -302,10 +332,13 @@ func (b *Broadcaster) persistAlert(work alertWork) {
 		Status:         "pending",
 	}
 	if err := db.DB.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "frame_id"}},
+		Columns:   []clause.Column{{Name: "run_id"}, {Name: "frame_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"image_path", "uncertain_count", "detections_json", "status", "updated_at"}),
 	}).Create(&sample).Error; err != nil {
 		log.Printf("Failed to save sample: %v", err)
+	}
+	if sample.ID == 0 {
+		_ = db.DB.Where("run_id = ? AND frame_id = ?", work.runID, work.frameID).First(&sample).Error
 	}
 	if perf.Enabled() {
 		if latency := time.Since(start); latency > 80*time.Millisecond {
@@ -315,6 +348,8 @@ func (b *Broadcaster) persistAlert(work alertWork) {
 
 	event := &models.AlertEvent{
 		Type:       "alert",
+		SampleID:   sample.ID,
+		RunID:      work.runID,
 		FrameID:    work.frameID,
 		ImageURL:   fmt.Sprintf("/api/images/%s", origName),
 		Detections: work.detections,

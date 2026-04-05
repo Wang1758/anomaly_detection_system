@@ -6,7 +6,7 @@ import { useAppStore } from '../../stores/appStore';
 const DEFAULT_LOCAL_VIDEO = '../data/videos/1.mp4';
 
 export function TopControlBar() {
-  const { config, setConfig, pipelineRunning, setPipelineRunning, clearAlerts } = useAppStore();
+  const { config, setConfig, pipelineRunning, setPipelineRunning } = useAppStore();
   const [sourceType, setSourceType] = useState<'rtsp' | 'local'>(config?.source_type || 'local');
   const [sourceAddr, setSourceAddr] = useState(config?.source_addr || DEFAULT_LOCAL_VIDEO);
   const [fps, setFps] = useState(config?.fps || 25);
@@ -67,10 +67,8 @@ export function TopControlBar() {
       }
 
       if (pipelineRunning) {
-        clearAlerts();
         await restartPipeline();
       } else {
-        clearAlerts();
         const startRes = await fetch('/api/pipeline/start', { method: 'POST' });
         if (!startRes.ok) {
           const data = await startRes.json().catch(() => ({}));
@@ -104,7 +102,6 @@ export function TopControlBar() {
       }
 
       if (pipelineRunning) {
-        clearAlerts();
         await restartPipeline();
         await syncPipelineStatus();
       }
@@ -116,7 +113,6 @@ export function TopControlBar() {
 
   const handleStop = async () => {
     try {
-      clearAlerts();
       await fetch('/api/pipeline/stop', { method: 'POST' });
       await syncPipelineStatus();
     } catch (e) {
