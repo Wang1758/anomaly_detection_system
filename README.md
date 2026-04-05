@@ -21,8 +21,8 @@
 | 层级 | 技术 |
 |------|------|
 | AI 计算层 | Python 3.11, gRPC, YOLOv11 (ultralytics), OpenCV, PyTorch |
-| 业务调度层 | Go 1.24, Gin, GoCV, GORM, SQLite, nhooyr.io/websocket |
-| 交互展示层 | React 18, TypeScript, Vite, Tailwind CSS, Framer Motion, Zustand |
+| 业务调度层 | Go 1.25, Gin, GoCV, GORM, SQLite, nhooyr.io/websocket |
+| 交互展示层 | React 19, TypeScript, Vite, Tailwind CSS, Framer Motion, Zustand |
 
 ## 项目结构
 
@@ -40,19 +40,16 @@ anomaly_detection_system/
 ## 快速开始
 ### 本地开发前置环境配置
 
-本项目本地开发需先安装以下环境：
+本项目本地开发需先安装以下环境，其中ai_service服务运行在windows主机上，go和前端运行在linux上。
 
 1. **Python 3.11+**
-2. **Go 1.24+**
+2. **Go 1.25+**
 3. **Node.js 20+**
 4. **OpenCV 开发库 + 编译工具链**
 
-Ubuntu/centos 配置Go、Node.js和GoCV开发工具链。
-windows 配置python开发环境
-
 目录与文件准备要求：
 
-- `data/indoor`目录放置在与ai_service平级的目录。
+- 数据集目录位于 `data/indoor`，应该放到与ai_service平级的目录。
 - `ai_service/models/best.pt` 或 `data/models/` 下至少存在一个可加载权重。
 - 若使用“AI 一键判断”的多模态模型，需要提前配置 `LLM_API_KEY`（可选，不配置会回退到 YOLO 重检测）。
 
@@ -96,7 +93,7 @@ Python `ai_service` 跑在宿主机，而 Go 后端跑在 VMware 虚拟机：
 
 ```bash
 cd backend
-AI_SERVICE_ADDR=192.168.***.***:50051 SERVER_PORT=:8080 DATA_DIR=../data go run -tags gocv ./cmd/server/
+AI_SERVICE_ADDR=192.168.***.***:50051 SERVER_PORT=:8080 DATA_DIR=../data go run ./cmd/server/
 ```
 
 在虚拟机内可先做连通性检查：
@@ -116,6 +113,20 @@ cd frontend
 npm install
 npm run dev
 ```
+
+### 常见问题排查（本地开发）
+
+1. **Backend 启动时报 OpenCV/GoCV 相关错误**
+	- 确认已安装 GoCV 所需要的环境
+
+2. **Backend 无法连接 AI Service (`connection refused` / 超时)**
+	- 确认 `ai_service` 已启动并监听 `50051`。
+	- 本机开发建议使用 `AI_SERVICE_ADDR=localhost:50051`。
+	- NAT 场景请改为宿主机 NAT 网卡 IP，并使用 `nc -vz <host-ip> 50051` 检查连通性。
+
+3. **训练或推理时报模型文件不存在**
+	- 确认 `ai_service/models/best.pt` 或 `data/models/` 下存在可加载权重。
+	- 若使用训练热更新，确认 `DATA_DIR/models/latest.pt` 路径与 `AI_RELOAD_MODEL_PATH` 配置一致。
 
 ## API 端点
 
@@ -137,7 +148,7 @@ npm run dev
 
 ## 环境变量
 
-项目中所有通过环境变量配置的参数如下。本地开发时在启动命令前添加
+项目中所有通过环境变量配置的参数如下。本地开发时在启动命令前添加。
 
 ### AI Service (Python)
 
