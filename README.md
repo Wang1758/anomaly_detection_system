@@ -53,6 +53,8 @@ anomaly_detection_system/
 - `ai_service/models/best.pt` 或 `data/models/` 下至少存在一个可加载权重。
 - 若使用“AI 一键判断”的多模态模型，需要提前配置 `LLM_API_KEY`（可选，不配置会回退到 YOLO 重检测）。
 
+python建议使用conda虚拟环境管理，并安装pytorch和nvidia驱动。如果不安装nvidia驱动，则默认使用cpu进行运算。
+
 ### 本地开发启动
 **1. AI Service (Python)**
 
